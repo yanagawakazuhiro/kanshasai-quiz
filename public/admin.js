@@ -1,4 +1,5 @@
-const socket = io();
+const adminKey = prompt("ADMIN_KEY を入力してください");
+const socket = io({ auth: { adminKey } });
 
 const adminStatusElement = document.getElementById("admin-status");
 const connectedUsersElement = document.getElementById("connected-users");

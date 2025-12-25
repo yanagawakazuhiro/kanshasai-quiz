@@ -245,13 +245,16 @@ app.get("/admin", adminAuth, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
-// --- APIエンドポイント (主催者用 CRUD操作 - 変更なし) ---
-app.get("/api/questions", async (req, res) => {
+app.get("/admin.html", adminAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
+// --- APIエンドポイント (主催者用 CRUD操作) ---
+app.get("/api/questions", adminAuth, async (req, res) => {
   try {
     const allQuestions = await Question.find({});
     res.json(allQuestions);
   } catch (error) {
-    console.error("問題の取得エラー:", error);
     res.status(500).json({ message: "問題の取得に失敗しました。" });
   }
 });
@@ -424,32 +427,20 @@ function broadcastQuizStatus() {
 const ADMIN_KEY = process.env.ADMIN_KEY;
 
 io.on("connection", async (socket) => {
-  socket.on("adminConnect", () => {
-    const key = socket.handshake.auth?.adminKey;
-    if (key !== ADMIN_KEY) {
-      console.log("Rejected adminConnect");
-      return; // 無視
-    }
-    socket.join("admins");
-    console.log("Admin connected");
-  });
-
-  // async は必要
-  console.log("クライアントが接続しました:", socket.id);
-
   socket.isAdmin = false;
   socket.isController = false;
 
-  // 1. まず全てのイベントリスナーを登録する (await を使わない部分が中心)
-  //    これらのリスナーは、接続したソケットに対して非同期で発生するイベントを待ち受ける
   socket.on("adminConnect", () => {
-    // <-- adminConnect リスナーをここへ移動
-    console.log("管理画面が接続しました:", socket.id); // <-- このログが出ればOK
-    socket.isAdmin = true; // <-- ここで isAdmin を true に設定
-    console.log(`[adminConnect] ソケット ${socket.id} を管理者に設定。`); // <-- ログ追加
-    broadcastQuizStatus(); // 役割変更後に全体に通知
+    const key = socket.handshake.auth?.adminKey;
+    if (!ADMIN_KEY || key !== ADMIN_KEY) {
+      console.log("Rejected adminConnect", socket.id);
+      return;
+    }
+    socket.isAdmin = true;
+    socket.join("admins");
+    console.log("Admin connected", socket.id);
+    broadcastQuizStatus();
   });
-
   socket.on("controllerConnect", () => {
     // <-- controllerConnect リスナーもここへ移動
     console.log("コントロール画面が接続しました:", socket.id);
