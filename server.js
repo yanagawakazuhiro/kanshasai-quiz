@@ -28,6 +28,18 @@ app.use(express.json());
 app.use(express.static("public"));
 
 // --- データベース接続 ---
+
+console.log("MONGODB_URI exists?", !!process.env.MONGODB_URI);
+if (process.env.MONGODB_URI) {
+  console.log(
+    "MONGODB_URI head:",
+    process.env.MONGODB_URI.replace(/\/\/.*?:.*?@/, "//****:****@").slice(
+      0,
+      120
+    )
+  );
+}
+
 const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
