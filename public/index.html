@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイムクイズ - 参加者</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>リアルタイムクイズ</h1>
+        <p id="status">サーバーに接続中...</p>
+        
+        <div id="nickname-section">
+            <p>ニックネームを入力してください</p>
+            <input type="text" id="nicknameInput" placeholder="あなたのニックネーム">
+            <button id="setNicknameBtn">参加</button>
+        </div>
+
+        <div id="question-area">
+            <p id="question-text">問題が表示されます</p>
+            <div id="options">
+                <button class="option-button" data-option="A">選択肢 A</button>
+                <button class="option-button" data-option="B">選択肢 B</button>
+                <button class="option-button" data-option="C">選択肢 C</button>
+                <button class="option-button" data-option="D">選択肢 D</button>
+            </div>
+        </div>
+        <p id="feedback"></p>
+        <p id="my-score">あなたの正解数: 0</p>
+    </div>
+
+    <!-- Socket.IOクライアントライブラリを読み込む -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- クライアント側のJavaScriptを読み込む -->
+    <script src="client.js"></script>
+</body>
+</html>

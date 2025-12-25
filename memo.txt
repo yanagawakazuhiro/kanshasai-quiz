@@ -1,0 +1,896 @@
+const basicAuth = require("express-basic-auth");
+
+const adminAuth = basicAuth({
+  users: { [process.env.ADMIN_USER]: process.env.ADMIN_PASS },
+  challenge: true, // ブラウザの認証ダイアログを出す
+});
+
+// .envファイルから環境変数を読み込む
+require("dotenv").config();
+
+const express = require("express");
+const http = require("http");
+const socketIo = require("socket.io");
+const mongoose = require("mongoose");
+
+mongoose.set("debug", true); // デバッグログは引き続き有効にしておきましょう
+
+// モデルのインポート
+const Question = require("./models/Question");
+const User = require("./models/User");
+const Answer = require("./models/Answer");
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+
+// --- ミドルウェア ---
+app.use(express.json());
+app.use(express.static("public"));
+
+// --- データベース接続 ---
+const MONGODB_URI =
+  process.env.MONGODB_URI || "mongodb://localhost:27017/quiz_app";
+
+mongoose
+  .connect(MONGODB_URI, {
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 10000,
+    family: 4,
+  })
+  .then(() => {
+    console.log("MongoDBに接続しました");
+    //initializeQuizData(); // 初回データ投入が済んでいればコメントアウトのまま
+    loadQuestions();
+  })
+  .catch((err) => console.error("MongoDB接続エラー:", err));
+
+// --- ダミーの問題データと初期化関数 (変更なし) ---
+const dummyQuestions = [
+  {
+    text: "世界で一番高い山は？",
+    options: [
+      { id: "A", text: "K2" },
+      { id: "B", text: "エベレスト" },
+      { id: "C", text: "マッターホルン" },
+      { id: "D", text: "富士山" },
+    ],
+    correctOptionId: "B",
+  },
+  {
+    text: "日本の首都は？",
+    options: [
+      { id: "A", text: "大阪" },
+      { id: "B", text: "京都" },
+      { id: "C", text: "東京" },
+      { id: "D", text: "札幌" },
+    ],
+    correctOptionId: "C",
+  },
+  // さらに問題を追加できます
+];
+
+async function initializeQuizData() {
+  try {
+    const count = await Question.countDocuments();
+    if (count === 0) {
+      await Question.insertMany(dummyQuestions);
+      console.log("ダミーの問題データをデータベースに投入しました。");
+    } else {
+      console.log("問題データは既に存在します。スキップしました。");
+    }
+  } catch (error) {
+    console.error("問題データの初期化中にエラーが発生しました:", error);
+  }
+}
+
+const path = require("path");
+const multer = require("multer");
+
+const uploadDir = path.join(__dirname, "public", "uploadsImage");
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`);
+  },
+});
+
+const upload = multer({ storage });
+
+// --- ゲームの状態管理 ---
+let currentQuestionIndex = -1;
+let questions = [];
+let isQuizActive = false;
+let quizTimer = null;
+const QUESTION_DURATION = 10;
+let currentRemainingTime = QUESTION_DURATION;
+let currentQuestionData = null;
+let currentQuestionResults = {
+  questionId: null,
+  totalVotes: 0,
+  optionVotes: {},
+  correctOptionId: null,
+  answeredUserIds: new Set(),
+};
+let isShowingResults = false;
+
+const socketAnsweredFlags = new Map(); // Map<socket.id, boolean>
+
+function resetGameState() {
+  currentQuestionIndex = -1;
+  isQuizActive = false;
+  if (quizTimer) {
+    clearInterval(quizTimer);
+    quizTimer = null;
+  }
+  currentRemainingTime = QUESTION_DURATION;
+  currentQuestionData = null;
+  currentQuestionResults = {
+    questionId: null,
+    totalVotes: 0,
+    optionVotes: {},
+    correctOptionId: null,
+    answeredUserIds: new Set(),
+  };
+  isShowingResults = false;
+  io.sockets.sockets.forEach((s) => socketAnsweredFlags.set(s.id, false)); // 全クライアントの回答済みフラグもリセット
+  console.log("ゲームの状態がリセットされました。");
+}
+// サーバー起動時に一度リセット
+resetGameState();
+
+// サーバー起動時に問題をロード
+async function loadQuestions() {
+  questions = await Question.find({});
+  if (questions.length === 0) {
+    console.warn("データベースに問題がありません。");
+  } else {
+    console.log(`${questions.length} 問の問題をロードしました。`);
+  }
+  io.emit("questionsUpdated"); // 主催者画面に更新を通知
+  broadcastQuizStatus(); // クイズステータス更新
+}
+
+// クイズステータスを全クライアントにブロードキャストする関数
+function broadcastQuizStatus() {
+  let qText = "なし";
+  let qOptions = [];
+  if (isQuizActive && currentQuestionData) {
+    qText = currentQuestionData.text;
+    qOptions = currentQuestionData.options;
+  }
+  const participantCount = Array.from(io.sockets.sockets.values()).filter(
+    (s) => !s.isAdmin && !s.isController
+  ).length;
+
+  io.sockets.sockets.forEach((s) => {
+    // 各ソケットに対して個別に送信
+    const statusData = {
+      // 送信するデータを作成
+      isActive: isQuizActive,
+      currentQuestionIndex: currentQuestionIndex,
+      currentQuestionText: qText,
+      currentQuestionOptions: qOptions,
+      totalQuestions: questions.length,
+      remainingTime: currentRemainingTime,
+      connectedUsers: participantCount,
+      isShowingResults: isShowingResults,
+      isController: s.isController,
+    };
+    s.emit("quizStatus", statusData);
+    console.log(
+      `[broadcastQuizStatus] ソケット ${s.id} に quizStatus を送信。isController: ${s.isController}`
+    );
+  });
+}
+
+// リアルタイム投票結果をブロードキャストする関数
+function broadcastQuestionResults() {
+  console.log("broadcastQuestionResultsが呼び出されました。");
+  if (!currentQuestionResults.questionId) return;
+
+  // showQuestionResults イベントは、結果表示が必要な時のみ送る
+  // クライアント側でリアルタイムパーセンテージ表示を行わないため、この関数は直接結果を表示する
+  io.emit("showQuestionResults", {
+    questionId: currentQuestionResults.questionId,
+    totalVotes: currentQuestionResults.totalVotes,
+    optionVotes: currentQuestionResults.optionVotes,
+    correctOptionId: currentQuestionResults.correctOptionId,
+    // isShowingResults: isShowingResults // クライアント側で判断させる
+  });
+  console.log("showQuestionResultsイベントをクライアントに送信しました。");
+}
+
+// 各問題のタイマーを開始する関数
+function startQuestionTimer() {
+  if (quizTimer) clearInterval(quizTimer);
+
+  currentRemainingTime = QUESTION_DURATION;
+  isShowingResults = false; // 新しい問題が始まったら結果表示中ではない
+  io.emit("countdown", currentRemainingTime);
+  broadcastQuizStatus();
+
+  quizTimer = setInterval(() => {
+    currentRemainingTime--;
+    io.emit("countdown", currentRemainingTime);
+    broadcastQuizStatus();
+
+    if (currentRemainingTime <= 0) {
+      clearInterval(quizTimer);
+      currentRemainingTime = 0;
+      console.log("問題時間切れ！");
+
+      isShowingResults = false;
+      broadcastQuizStatus(); // ステータスを更新 (display.jsのボタン制御に影響)
+    }
+  }, 1000);
+}
+
+app.get("/admin", adminAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
+// --- APIエンドポイント (主催者用 CRUD操作 - 変更なし) ---
+app.get("/api/questions", async (req, res) => {
+  try {
+    const allQuestions = await Question.find({});
+    res.json(allQuestions);
+  } catch (error) {
+    console.error("問題の取得エラー:", error);
+    res.status(500).json({ message: "問題の取得に失敗しました。" });
+  }
+});
+
+app.post("/api/questions", adminAuth, async (req, res) => {
+  const q = new Question(req.body);
+  await q.save();
+  res.status(201).json(q);
+});
+
+app.delete("/api/questions/:id", adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await Question.findByIdAndDelete(id);
+    if (!result) {
+      return res.status(404).json({ message: "問題が見つかりませんでした。" });
+    }
+    console.log("問題を削除しました:", id);
+    await loadQuestions();
+    io.emit("questionsUpdated");
+    res.status(200).json({ message: "問題を削除しました。" });
+  } catch (error) {
+    console.error("問題の削除エラー:", error);
+    res.status(500).json({ message: "問題の削除に失敗しました。" });
+  }
+});
+
+app.put("/api/questions/:id", adminAuth, async (req, res) => {
+  const q = await Question.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+  });
+  res.json(q);
+});
+
+// --- ヘルパー関数: スコア更新処理をまとめる ---
+async function updateScoresForCurrentQuestion() {
+  if (!currentQuestionData || !currentQuestionData._id) {
+    console.warn(
+      "[updateScores] スコア更新スキップ: 現在の問題データが無効です。"
+    );
+    return;
+  }
+  const prevQuestionId = currentQuestionData._id;
+  console.log(`[updateScores] スコア更新処理開始: 問題ID ${prevQuestionId}`);
+
+  console.log(
+    `[updateScores] 回答済みユーザーIDs: ${Array.from(
+      currentQuestionResults.answeredUserIds
+    ).join(", ")}`
+  );
+
+  for (const userId of currentQuestionResults.answeredUserIds) {
+    let objectUserId;
+    try {
+      objectUserId = new mongoose.Types.ObjectId(userId); // <-- 変更: new を付けてコンストラクタとして呼び出す
+    } catch (e) {
+      console.error(
+        `[updateScores] 無効なUserID形式を検出しました: ${userId}. エラー: ${e.message}`
+      );
+      continue; // このユーザーの処理をスキップ
+    }
+
+    console.log(`[updateScores] ユーザー ${userId} の回答をチェック中...`);
+
+    try {
+      const latestAnswer = await Answer.findOne({
+        userId: objectUserId,
+        questionId: prevQuestionId,
+        isCorrect: true,
+      }).sort({ timestamp: -1 });
+
+      if (latestAnswer) {
+        console.log(
+          `[updateScores] ユーザー ${userId} の正解回答が見つかりました。`
+        );
+
+        const user = await User.findById(objectUserId);
+        if (
+          user &&
+          user.scoreHistory &&
+          user.scoreHistory.includes(prevQuestionId.toString())
+        ) {
+          console.log(
+            `[updateScores] ユーザー ${userId} はこの問題のスコアを既に更新済みです。スキップ。`
+          );
+          continue;
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(
+          objectUserId,
+          {
+            $inc: { score: 1 },
+            $push: { scoreHistory: prevQuestionId.toString() },
+          },
+          { new: true }
+        );
+        console.log(
+          `[updateScores] ユーザー ${userId} のスコアを更新しました。新しいスコア: ${updatedUser.score}`
+        );
+      } else {
+        console.log(
+          `[updateScores] ユーザー ${userId} は前の問題 (${prevQuestionId}) に正解していません。または回答が見つかりません。`
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[updateScores] ユーザー ${userId} の回答検索またはスコア更新中に予期せぬエラー:`,
+        error
+      );
+    }
+  }
+  console.log(`[updateScores] スコア更新処理完了。`);
+}
+
+//最終ランキングを取得する関数
+async function getFinalRanking() {
+  try {
+    // スコア降順、lastConnectedAt (接続が新しいもの) でソートし、上位5名を取得
+    // nickname が '匿名参加者' 以外のユーザーを優先したい場合、別途条件を追加
+    const ranking = await User.find({ nickname: { $ne: "匿名参加者" } }) // ニックネームが設定されているユーザーのみ
+      .sort({ score: -1, lastConnectedAt: 1 }) // スコア降順、接続時間昇順 (同点の場合)
+      .limit(5); // 上位5名
+
+    // ニックネームとスコアのみを抽出して返す
+    return ranking.map((user) => ({
+      nickname: user.nickname,
+      score: user.score,
+    }));
+  } catch (error) {
+    console.error("最終ランキングの取得エラー:", error);
+    return [];
+  }
+}
+
+// --- ヘルパー関数: 単一ソケットに quizStatus を送信 ---
+function sendQuizStatusToSocket(s) {
+  let qText = "なし";
+  let qOptions = [];
+  if (isQuizActive && currentQuestionData) {
+    qText = currentQuestionData.text;
+    qOptions = currentQuestionData.options;
+  }
+  const participantCount = Array.from(io.sockets.sockets.values()).filter(
+    (cl) => !cl.isAdmin && !cl.isController
+  ).length;
+
+  s.emit("quizStatus", {
+    isActive: isQuizActive,
+    currentQuestionIndex: currentQuestionIndex,
+    currentQuestionText: qText,
+    currentQuestionOptions: qOptions,
+    totalQuestions: questions.length,
+    remainingTime: currentRemainingTime,
+    connectedUsers: participantCount,
+    isShowingResults: isShowingResults,
+    isController: s.isController, // IMPORTANT: Use the individual socket's flag
+    isAdmin: s.isAdmin, // Also include isAdmin for clarity
+  });
+  console.log(
+    `[sendQuizStatusToSocket] ソケット ${s.id} に quizStatus を送信。isController: ${s.isController}, isAdmin: ${s.isAdmin}`
+  );
+}
+
+// --- ヘルパー関数: 全クライアントに quizStatus をブロードキャスト ---
+function broadcastQuizStatus() {
+  io.sockets.sockets.forEach((s) => sendQuizStatusToSocket(s));
+}
+
+// --- Socket.IO接続イベント ---
+const ADMIN_KEY = process.env.ADMIN_KEY;
+
+io.on("connection", async (socket) => {
+  socket.on("adminConnect", () => {
+    const key = socket.handshake.auth?.adminKey;
+    if (key !== ADMIN_KEY) {
+      console.log("Rejected adminConnect");
+      return; // 無視
+    }
+    socket.join("admins");
+    console.log("Admin connected");
+  });
+
+  // async は必要
+  console.log("クライアントが接続しました:", socket.id);
+
+  socket.isAdmin = false;
+  socket.isController = false;
+
+  // 1. まず全てのイベントリスナーを登録する (await を使わない部分が中心)
+  //    これらのリスナーは、接続したソケットに対して非同期で発生するイベントを待ち受ける
+  socket.on("adminConnect", () => {
+    // <-- adminConnect リスナーをここへ移動
+    console.log("管理画面が接続しました:", socket.id); // <-- このログが出ればOK
+    socket.isAdmin = true; // <-- ここで isAdmin を true に設定
+    console.log(`[adminConnect] ソケット ${socket.id} を管理者に設定。`); // <-- ログ追加
+    broadcastQuizStatus(); // 役割変更後に全体に通知
+  });
+
+  socket.on("controllerConnect", () => {
+    // <-- controllerConnect リスナーもここへ移動
+    console.log("コントロール画面が接続しました:", socket.id);
+    socket.isController = true;
+    console.log(
+      `[controllerConnect] ソケット ${socket.id} をコントローラーに設定。`
+    );
+    broadcastQuizStatus();
+  });
+
+  socket.on("disconnect", async () => {
+    console.log("クライアントが切断しました:", socket.id);
+    socketAnsweredFlags.delete(socket.id);
+    broadcastQuizStatus();
+  });
+
+  socket.on("answer", async (data) => {
+    // answer は async が必要
+    // ... (回答処理ロジック - 変更なし) ...
+    if (
+      !isQuizActive ||
+      currentRemainingTime <= 0 ||
+      !currentQuestionData ||
+      currentQuestionData._id.toString() !== data.questionId ||
+      socketAnsweredFlags.get(socket.id)
+    ) {
+      socket.emit("answerFeedback", {
+        isCorrect: false,
+        message: "現在、回答を受け付けていません。または既にも回答済みです。",
+      });
+      return;
+    }
+
+    console.log(`参加者 ${socket.id} (User: ${socket.userId}) が回答:`, data);
+
+    const currentQ = questions.find(
+      (q) => q._id.toString() === data.questionId
+    );
+    if (!currentQ) {
+      socket.emit("answerFeedback", {
+        isCorrect: false,
+        message: "問題が見つかりません。",
+      });
+      console.error("回答エラー: 現在の問題が見つかりません。");
+      return;
+    }
+
+    const isCorrect = currentQ.correctOptionId === data.selectedOptionId;
+    console.log(`回答は ${isCorrect ? "正解" : "不正解"} でした。`);
+
+    const newAnswer = new Answer({
+      userId: socket.userId,
+      questionId: currentQ._id,
+      selectedOptionId: data.selectedOptionId,
+      isCorrect: isCorrect,
+    });
+    try {
+      await newAnswer.save();
+      console.log("回答データが正常に保存されました:", newAnswer);
+    } catch (error) {
+      console.error("回答データの保存中にエラーが発生しました:", error);
+    }
+
+    currentQuestionResults.totalVotes++;
+    currentQuestionResults.optionVotes[data.selectedOptionId] =
+      (currentQuestionResults.optionVotes[data.selectedOptionId] || 0) + 1;
+    currentQuestionResults.answeredUserIds.add(socket.userId.toString());
+
+    socketAnsweredFlags.set(socket.id, true);
+    socket.emit("answerFeedback", {
+      isCorrect: isCorrect,
+      message: "回答を送信しました。",
+    });
+  });
+
+  socket.on("hostCommand", async (commandData) => {
+    // hostCommand も async が必要
+    try {
+      if (commandData.type === "resetNicknames") {
+        // resetNicknames コマンドの場合
+        if (!socket.isAdmin) {
+          // isAdmin が true でなければブロック
+          console.warn(
+            "非管理者ソケットからのニックネームリセットコマンドをブロックしました:",
+            socket.id
+          );
+          socket.emit(
+            "message",
+            "ニックネームのリセットは管理者のみ実行できます。"
+          );
+          return;
+        }
+        console.log("管理者コマンドを受信:", commandData.type); // 管理者コマンドのログ
+        try {
+          await User.updateMany({}, { nickname: "匿名参加者" });
+          console.log("全ての参加者のニックネームをリセットしました。");
+          socket.emit("nicknamesResetSuccess");
+          broadcastQuizStatus();
+        } catch (error) {
+          console.error("ニックネームリセット中にエラー:", error);
+          socket.emit(
+            "message",
+            "ニックネームのリセット中にエラーが発生しました。"
+          );
+        }
+      } else {
+        // それ以外のクイズ進行制御コマンドの場合 (startQuiz, nextQuestion, endQuiz, showResults)
+        if (!socket.isController) {
+          // isController が true でなければブロック
+          console.warn(
+            "非コントローラーソケットからのコマンドをブロックしました:",
+            socket.id,
+            commandData.type
+          );
+          return;
+        }
+        console.log("コントローラーコマンドを受信:", commandData.type); // コントローラーコマンドのログ
+
+        if (commandData.type === "startQuiz") {
+          if (isQuizActive) return;
+          resetGameState();
+          isQuizActive = true;
+          currentQuestionIndex = 0;
+          if (questions.length === 0) {
+            console.warn("問題がありません。クイズを開始できません。");
+            socket.emit(
+              "message",
+              "問題がありません。クイズを開始できません。"
+            );
+            isQuizActive = false;
+            broadcastQuizStatus();
+            return;
+          }
+
+          await Answer.deleteMany({});
+          await User.updateMany({}, { score: 0, scoreHistory: [] });
+          console.log("前回の回答とスコア履歴をリセットしました。");
+
+          io.emit("quizStarted");
+
+          currentQuestionData = questions[currentQuestionIndex];
+          currentQuestionResults = {
+            questionId: currentQuestionData._id.toString(),
+            totalVotes: 0,
+            optionVotes: currentQuestionData.options.reduce(
+              (acc, opt) => ({ ...acc, [opt.id]: 0 }),
+              {}
+            ),
+            correctOptionId: currentQuestionData.correctOptionId,
+            answeredUserIds: new Set(),
+          };
+
+          for (const s of io.sockets.sockets.values()) {
+            if (!s.isAdmin && !s.isController) {
+              s.emit("question", {
+                id: currentQuestionData._id.toString(),
+                text: currentQuestionData.text,
+                options: currentQuestionData.options,
+                newScore: 0,
+              });
+              console.log(
+                `[startQuiz] 参加者 ${s.id} に最初の問題とスコア0を送信。`
+              );
+            } else {
+              s.emit("question", {
+                id: currentQuestionData._id.toString(),
+                text: currentQuestionData.text,
+                options: currentQuestionData.options,
+              });
+              console.log(
+                `[startQuiz] 管理/コントローラー画面 ${s.id} に最初の問題を送信。`
+              );
+            }
+          }
+          console.log("クイズを開始しました。最初の問題を送信。");
+          startQuestionTimer();
+          isShowingResults = false;
+        } else if (commandData.type === "nextQuestion") {
+          if (!isQuizActive) return;
+
+          clearInterval(quizTimer);
+          isShowingResults = false;
+          await updateScoresForCurrentQuestion();
+
+          currentQuestionIndex++;
+          if (currentQuestionIndex < questions.length) {
+            currentQuestionData = questions[currentQuestionIndex];
+            currentQuestionResults = {
+              questionId: currentQuestionData._id.toString(),
+              totalVotes: 0,
+              optionVotes: currentQuestionData.options.reduce(
+                (acc, opt) => ({ ...acc, [opt.id]: 0 }),
+                {}
+              ),
+              correctOptionId: currentQuestionData.correctOptionId,
+              answeredUserIds: new Set(),
+            };
+            for (const s of io.sockets.sockets.values()) {
+              socketAnsweredFlags.set(s.id, false);
+            }
+
+            for (const s of io.sockets.sockets.values()) {
+              try {
+                if (!s.isAdmin && !s.isController) {
+                  const participantUser = await User.findById(s.userId);
+                  s.emit("question", {
+                    id: currentQuestionData._id,
+                    text: currentQuestionData.text,
+                    options: currentQuestionData.options,
+                    newScore: participantUser ? participantUser.score : 0,
+                  });
+                  console.log(
+                    `[nextQuestion] 参加者 ${s.id} (${
+                      s.userId
+                    }) に問題とスコアを送信。スコア: ${
+                      participantUser ? participantUser.score : 0
+                    }`
+                  );
+                } else {
+                  s.emit("question", {
+                    id: currentQuestionData._id.toString(),
+                    text: currentQuestionData.text,
+                    options: currentQuestionData.options,
+                  });
+                  console.log(
+                    `[nextQuestion] 管理/コントローラー画面 ${s.id} に問題を送信。`
+                  );
+                }
+              } catch (emitError) {
+                console.error(
+                  `[nextQuestion] 問題またはスコア送信中にエラー (ソケット ${s.id}):`,
+                  emitError
+                );
+              }
+            }
+            console.log("次の問題を送信しました。");
+            startQuestionTimer();
+          } else {
+            await updateScoresForCurrentQuestion();
+
+            const finalRankingData = await getFinalRanking();
+
+            for (const s of io.sockets.sockets.values()) {
+              try {
+                if (!s.isAdmin && !s.isController) {
+                  const participantUser = await User.findById(s.userId);
+                  s.emit("quizEnded", {
+                    message: "全問終了しました！",
+                    finalScore: participantUser ? participantUser.score : 0,
+                  });
+                } else if (s.isController) {
+                  s.emit("quizEnded", {
+                    message: "全問終了しました。",
+                    finalRanking: finalRankingData,
+                  });
+                } else {
+                  s.emit("quizEnded", { message: "クイズが終了しました。" });
+                }
+              } catch (emitError) {
+                console.error(
+                  `[nextQuestion-quizEnded] 終了メッセージ送信中にエラー (ソケット ${s.id}):`,
+                  emitError
+                );
+              }
+            }
+
+            isQuizActive = false;
+            currentQuestionIndex = -1;
+            currentQuestionData = null;
+            currentQuestionResults = {
+              questionId: null,
+              totalVotes: 0,
+              optionVotes: {},
+              correctOptionId: null,
+              answeredUserIds: new Set(),
+            };
+            isShowingResults = false;
+            for (const s of io.sockets.sockets.values()) {
+              socketAnsweredFlags.set(s.id, false);
+            }
+            console.log("クイズが終了しました (全問終了)。");
+          }
+        } else if (commandData.type === "endQuiz") {
+          clearInterval(quizTimer);
+
+          await updateScoresForCurrentQuestion();
+          resetGameState();
+
+          const finalRankingData = await getFinalRanking();
+
+          console.log("主催者によってクイズが終了されました。");
+
+          for (const s of io.sockets.sockets.values()) {
+            try {
+              if (!s.isAdmin && !s.isController) {
+                const participantUser = await User.findById(s.userId);
+                s.emit("quizEnded", {
+                  message: "クイズが終了しました！",
+                  finalScore: participantUser ? participantUser.score : 0,
+                  finalRanking: finalRankingData,
+                });
+                console.log(
+                  `[endQuiz] 参加者 ${s.id} に最終スコア (${
+                    participantUser ? participantUser.score : 0
+                  }) を送信しました。`
+                );
+              } else if (s.isController) {
+                s.emit("quizEnded", {
+                  message: "クイズが終了しました。",
+                  finalRanking: finalRankingData,
+                });
+              } else {
+                s.emit("quizEnded", { message: "クイズが終了しました。" });
+              }
+            } catch (emitError) {
+              console.error(
+                `[endQuiz] 終了メッセージ送信中にエラー (ソケット ${s.id}):`,
+                emitError
+              );
+            }
+          }
+        } else if (commandData.type === "showResults") {
+          if (
+            !isQuizActive ||
+            currentRemainingTime > 0 ||
+            !currentQuestionData
+          ) {
+            socket.emit("message", "まだ結果を表示できません。");
+            return;
+          }
+          console.log("結果表示コマンドを受信しました。");
+          isShowingResults = true;
+          broadcastQuestionResults();
+          console.log("showResultsイベントをクライアントに送信しました。");
+        } else if (commandData.type === "resetQuizState") {
+          if (!socket.isController) {
+            // コントローラーのみが実行できるようにする (管理者ではない)
+            console.warn(
+              "非コントローラーソケットからのクイズ状態リセットコマンドをブロックしました:",
+              socket.id
+            );
+            socket.emit(
+              "message",
+              "クイズ状態のリセットはコントロール画面からのみ実行できます。"
+            );
+            return;
+          }
+          console.log("クイズ状態リセットコマンドを受信しました。");
+          try {
+            resetGameState(); // ゲームの状態を全てリセット
+            // データベースの Answer と User のスコア/履歴もリセットするならここで
+            await Answer.deleteMany({});
+            await User.updateMany({}, { score: 0, scoreHistory: [] });
+            console.log("データベースの回答とスコアもリセットしました。");
+            socket.emit("message", "クイズ状態をリセットしました。"); // コントローラーにフィードバック
+          } catch (error) {
+            console.error("クイズ状態のリセット中にエラー:", error);
+            socket.emit(
+              "message",
+              "クイズ状態のリセット中にエラーが発生しました。"
+            );
+          }
+        } else if (commandData.type === "returnToStart") {
+          console.log("[hostCommand] returnToStart");
+
+          // 状態を初期化
+          resetGameState();
+          isQuizActive = false;
+          isShowingResults = false;
+          currentQuestionIndex = -1;
+
+          // 画面側に「開始画面へ戻れ」を通知
+          io.emit("resetToStart");
+
+          // ステータスも配信（任意だがやっておくと安定）
+          broadcastQuizStatus();
+          return;
+        }
+      }
+      broadcastQuizStatus();
+    } catch (mainError) {
+      // hostCommand 全体の try-catch の閉じ
+      console.error(
+        "hostCommand 処理中に予期せぬメインエラーが発生しました:",
+        mainError
+      );
+    }
+  });
+
+  //ニックネーム設定イベント
+  socket.on("setNickname", async (data) => {
+    if (data.nickname) {
+      try {
+        // 既存のUserドキュメントを更新
+        await User.findByIdAndUpdate(socket.userId, {
+          nickname: data.nickname,
+        });
+        console.log(
+          `ソケット ${socket.id} のニックネームを ${data.nickname} に設定しました。`
+        );
+        socket.emit("setNicknameSuccess", { nickname: data.nickname }); // クライアントに成功を通知
+        broadcastQuizStatus(); // ニックネームが更新されたので、管理画面などに反映されるようにステータスをブロードキャスト
+      } catch (error) {
+        console.error(`ニックネーム設定エラー (ソケット ${socket.id}):`, error);
+        socket.emit("message", "ニックネーム設定中にエラーが発生しました。");
+      }
+    }
+  });
+
+  // --- ここからが、この接続ソケット固有の初期設定処理 ---
+  // これらは io.on('connection', ...) の async 関数内である必要がある
+  // ユーザー情報をデータベースから取得または作成
+  let user = await User.findOne({ socketId: socket.id });
+  if (!user) {
+    user = new User({ socketId: socket.id });
+    await user.save();
+    console.log(`新規ユーザー作成: ${user._id}`);
+  } else {
+    console.log(`既存ユーザー接続: ${user._id}`);
+  }
+  socket.userId = user._id;
+  socketAnsweredFlags.set(socket.id, false);
+
+  // 接続したばかりのソケットに、暫定的な quizStatus を送信
+  sendQuizStatusToSocket(socket);
+
+  // クイズがアクティブで、かつコントローラーソケットではない場合に、現在の問題情報を送信
+  if (
+    isQuizActive &&
+    currentQuestionData &&
+    !socket.isAdmin &&
+    !socket.isController
+  ) {
+    const currentUser = await User.findById(socket.userId);
+    socket.emit("question", {
+      id: currentQuestionData._id.toString(),
+      text: currentQuestionData.text,
+      options: currentQuestionData.options,
+      newScore: currentUser ? currentUser.score : 0,
+    });
+    socket.emit("countdown", currentRemainingTime);
+    if (isShowingResults) {
+      socket.emit("showQuestionResults", {
+        questionId: currentQuestionResults.questionId,
+        totalVotes: currentQuestionResults.totalVotes,
+        optionVotes: currentQuestionResults.optionVotes,
+        correctOptionId: currentQuestionResults.correctOptionId,
+      });
+    }
+  } else if (!isQuizActive && !socket.isAdmin && !socket.isController) {
+    socket.emit("message", "クイズはまだ開始されていません。");
+  }
+});
+
+// --- サーバー起動 ---
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, "0.0.0.0", () => console.log("Listening:", PORT));

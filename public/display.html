@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>クイズ全体表示</title>
+
+    <link rel="stylesheet" href="display.css" />
+  </head>
+  <body class="page-display">
+    <div class="container">
+      <header id="topbar">
+        <div id="countdown-container">
+          <div id="countdown">10</div>
+        </div>
+
+        <div id="quiz-controls-display">
+          <button id="startQuizBtnDisplay">クイズ開始</button>
+          <button id="showResultsBtnDisplay" style="display: none">
+            結果を表示
+          </button>
+          <button id="nextQuestionBtnDisplay" disabled>次の問題</button>
+          <button id="endQuizBtnDisplay" disabled>クイズ終了</button>
+        </div>
+      </header>
+
+      <section id="question-area">
+        <p id="question-text">問題が表示されます</p>
+      </section>
+
+      <section id="options">
+        <div class="option" data-id="A">
+          <div class="option-label">A</div>
+          <img class="option-image" alt="" />
+          <div class="option-text"></div>
+        </div>
+
+        <div class="option" data-id="B">
+          <div class="option-label">B</div>
+          <img class="option-image" alt="" />
+          <div class="option-text"></div>
+        </div>
+
+        <div class="option" data-id="C">
+          <div class="option-label">C</div>
+          <img class="option-image" alt="" />
+          <div class="option-text"></div>
+        </div>
+
+        <div class="option" data-id="D">
+          <div class="option-label">D</div>
+          <img class="option-image" alt="" />
+          <div class="option-text"></div>
+        </div>
+      </section>
+
+      <!-- クイズ終了メッセージとランキング表示エリア -->
+      <section id="quiz-end-message-area">
+        <p id="final-message">終了</p>
+
+        <div id="ranking-area">
+          <h2>最終ランキング</h2>
+          <ul id="ranking-list"></ul>
+        </div>
+
+        <button id="return-to-start-btn" style="display: none">
+          開始画面に戻る
+        </button>
+      </section>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="display.js"></script>
+  </body>
+</html>
