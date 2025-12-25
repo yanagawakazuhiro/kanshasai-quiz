@@ -28,8 +28,11 @@ app.use(express.json());
 app.use(express.static("public"));
 
 // --- データベース接続 ---
-const MONGODB_URI =
-  process.env.MONGODB_URI || "mongodb://localhost:27017/quiz_app";
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  throw new Error("❌ MONGODB_URI is not set");
+}
 
 mongoose
   .connect(MONGODB_URI, {
@@ -39,11 +42,10 @@ mongoose
     family: 4,
   })
   .then(() => {
-    console.log("MongoDBに接続しました");
-    //initializeQuizData(); // 初回データ投入が済んでいればコメントアウトのまま
+    console.log("✅ MongoDBに接続しました");
     loadQuestions();
   })
-  .catch((err) => console.error("MongoDB接続エラー:", err));
+  .catch((err) => console.error("❌ MongoDB接続エラー:", err));
 
 // --- ダミーの問題データと初期化関数 (変更なし) ---
 const dummyQuestions = [
