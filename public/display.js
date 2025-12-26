@@ -1,6 +1,7 @@
-console.log("[display] display.js loaded");
-
-const socket = io(); // Socket.IOサーバーに接続
+const adminKey = prompt("ADMIN_KEY を入力してください");
+const socket = io({
+  auth: { adminKey },
+});
 
 const displayStatusElement = document.getElementById("display-status");
 const countdownElement = document.getElementById("countdown");

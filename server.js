@@ -22,9 +22,13 @@ const Answer = require("./models/Answer");
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
-
 // --- ミドルウェア ---
+
 app.use(express.json());
+app.use("/display.html", adminAuth);
+app.use("/admin.html", adminAuth);
+app.use("/admin", adminAuth);
+app.use("/display", adminAuth);
 app.use(express.static("public"));
 
 // --- データベース接続 ---
@@ -208,39 +212,6 @@ async function loadQuestions() {
   }
   io.emit("questionsUpdated"); // 主催者画面に更新を通知
   broadcastQuizStatus(); // クイズステータス更新
-}
-
-// クイズステータスを全クライアントにブロードキャストする関数
-function broadcastQuizStatus() {
-  let qText = "なし";
-  let qOptions = [];
-  if (isQuizActive && currentQuestionData) {
-    qText = currentQuestionData.text;
-    qOptions = currentQuestionData.options;
-  }
-  const participantCount = Array.from(io.sockets.sockets.values()).filter(
-    (s) => !s.isAdmin && !s.isController
-  ).length;
-
-  io.sockets.sockets.forEach((s) => {
-    // 各ソケットに対して個別に送信
-    const statusData = {
-      // 送信するデータを作成
-      isActive: isQuizActive,
-      currentQuestionIndex: currentQuestionIndex,
-      currentQuestionText: qText,
-      currentQuestionOptions: qOptions,
-      totalQuestions: questions.length,
-      remainingTime: currentRemainingTime,
-      connectedUsers: participantCount,
-      isShowingResults: isShowingResults,
-      isController: s.isController,
-    };
-    s.emit("quizStatus", statusData);
-    console.log(
-      `[broadcastQuizStatus] ソケット ${s.id} に quizStatus を送信。isController: ${s.isController}`
-    );
-  });
 }
 
 // リアルタイム投票結果をブロードキャストする関数
@@ -494,12 +465,9 @@ io.on("connection", async (socket) => {
     broadcastQuizStatus();
   });
   socket.on("controllerConnect", () => {
-    // <-- controllerConnect リスナーもここへ移動
-    console.log("コントロール画面が接続しました:", socket.id);
+    const key = socket.handshake.auth?.adminKey;
+    if (!ADMIN_KEY || key !== ADMIN_KEY) return;
     socket.isController = true;
-    console.log(
-      `[controllerConnect] ソケット ${socket.id} をコントローラーに設定。`
-    );
     broadcastQuizStatus();
   });
 
