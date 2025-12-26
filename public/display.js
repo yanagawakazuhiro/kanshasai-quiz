@@ -167,8 +167,7 @@ socket.on("showQuestionResults", (results) => {
 
   // ボタン切り替え
   showResultsBtnDisplay.style.display = "none";
-  nextQuestionBtnDisplay.disabled =
-    status?.currentQuestionIndex >= status?.totalQuestions - 1; // statusが無いなら後述の方法B
+  nextQuestionBtnDisplay.disabled = false;
   nextQuestionBtnDisplay.style.display = "inline-block";
 });
 
@@ -327,8 +326,10 @@ socket.on("quizStatus", (status) => {
     console.log(
       "[display.js-quizStatus] サーバーの応答を待機中... (isController: false)"
     ); // <-- このログが出るか？
-    displayStatusElement.textContent =
-      "サーバーの応答を待機中... (コントローラー認証中)";
+    setText(
+      displayStatusElement,
+      "サーバーの応答を待機中... (コントローラー認証中)"
+    );
     startQuizBtnDisplay.disabled = true;
     showResultsBtnDisplay.style.display = "none";
     nextQuestionBtnDisplay.disabled = true;
