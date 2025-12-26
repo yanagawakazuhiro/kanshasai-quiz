@@ -285,6 +285,7 @@ app.get("/api/questions", adminAuth, async (req, res) => {
 app.post("/api/questions", adminAuth, async (req, res) => {
   const q = new Question(req.body);
   await q.save();
+  await loadQuestions();
   res.status(201).json(q);
 });
 
@@ -590,6 +591,7 @@ io.on("connection", async (socket) => {
 
         if (commandData.type === "startQuiz") {
           if (isQuizActive) return;
+          await loadQuestions();
           resetGameState();
           isQuizActive = true;
           currentQuestionIndex = 0;
