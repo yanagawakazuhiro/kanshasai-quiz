@@ -59,8 +59,9 @@ const qrImageUrl =
   "https://res.cloudinary.com/dbndj9yfr/image/upload/v1766738084/QR_738068_wgke9r.png";
 
 function setJoinQrVisible(visible) {
-  if (!qrOverlay) return;
-  qrOverlay.style.display = visible ? "block" : "none";
+  const overlay = document.getElementById("join-qr-overlay");
+  if (!overlay) return;
+  overlay.style.display = visible ? "flex" : "none";
 }
 
 function initJoinQr() {
