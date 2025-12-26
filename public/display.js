@@ -1,6 +1,10 @@
-const adminKey = prompt("ADMIN_KEY を入力してください");
+const adminKey = (prompt("ADMIN_KEY を入力してください") || "").trim();
+if (!adminKey) {
+  alert("ADMIN_KEY が空です。もう一度開き直してください。");
+}
 const socket = io({
   auth: { adminKey },
+  query: { adminKey },
 });
 
 const displayStatusElement = document.getElementById("display-status");
