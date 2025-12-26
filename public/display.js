@@ -99,7 +99,6 @@ socket.on("disconnect", () => {
 socket.on("quizStarted", () => {
   // displayStatusElement はCSSで非表示になる
   // displayStatusElement.textContent = 'クイズ開始！';
-  setJoinQrVisible(false);
 
   // クイズ開始時はquiz-ended-layoutを削除し、終了メッセージエリアを非表示
   containerElement.classList.remove("quiz-ended-layout");
@@ -115,7 +114,6 @@ socket.on("quizStarted", () => {
 
 // サーバーから問題データが送られてきた時
 socket.on("question", (questionData) => {
-  setJoinQrVisible(false);
   currentQuestionId = questionData.id;
   resetResultsUI();
   // 問題文
@@ -262,7 +260,6 @@ socket.on("resetToStart", () => {
 
   countdownElement.textContent = "10";
   countdownElement.style.color = "#ffda6a";
-  setJoinQrVisible(true);
 });
 
 //ランキングを描画する関数
