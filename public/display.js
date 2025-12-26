@@ -48,13 +48,10 @@ const containerElement = document.querySelector(".container"); // container 要�
 //戻るボタンのDOM要素
 const returnToStartBtn = document.getElementById("return-to-start-btn");
 
-// --- QR表示 ---
-const qrOverlay = document.getElementById("join-qr-overlay");
-const qrMount = document.getElementById("join-qr");
-const joinUrlEl = document.getElementById("join-url");
-
-// 参加者URL（同じRenderの / でOK）
 const joinUrl = `${location.origin}/`;
+const qrOverlay = document.getElementById("join-qr-overlay");
+const qrImg = document.getElementById("join-qr-img");
+const joinUrlEl = document.getElementById("join-url");
 
 // 1回だけ生成して使い回す
 let joinQr = null;
@@ -71,12 +68,20 @@ function ensureJoinQr() {
     });
   }
 }
+// ★ここにCloudinaryの画像URLを貼る
+const qrImageUrl =
+  "https://res.cloudinary.com/dbndj9yfr/image/upload/v1766738084/QR_738068_wgke9r.png";
 
 function setJoinQrVisible(visible) {
   if (!qrOverlay) return;
-  if (visible) ensureJoinQr();
   qrOverlay.style.display = visible ? "block" : "none";
 }
+
+function initJoinQr() {
+  if (qrImg) qrImg.src = qrImageUrl;
+  if (joinUrlEl) joinUrlEl.textContent = joinUrl;
+}
+initJoinQr();
 setJoinQrVisible(true);
 let currentQuestionId = null;
 let countdownInterval = null;
