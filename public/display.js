@@ -55,20 +55,6 @@ const joinUrlEl = document.getElementById("join-url");
 
 // 1回だけ生成して使い回す
 let joinQr = null;
-
-function ensureJoinQr() {
-  if (!qrMount) return;
-  if (!joinQr) {
-    joinUrlEl && (joinUrlEl.textContent = joinUrl);
-    joinQr = new QRCode(qrMount, {
-      text: joinUrl,
-      width: 180,
-      height: 180,
-      correctLevel: QRCode.CorrectLevel.M,
-    });
-  }
-}
-// ★ここにCloudinaryの画像URLを貼る
 const qrImageUrl =
   "https://res.cloudinary.com/dbndj9yfr/image/upload/v1766738084/QR_738068_wgke9r.png";
 
