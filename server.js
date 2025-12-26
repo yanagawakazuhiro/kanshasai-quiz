@@ -453,6 +453,13 @@ io.on("connection", async (socket) => {
   socket.isAdmin = false;
   socket.isController = false;
 
+  const key = socket.handshake.auth?.adminKey;
+  if (ADMIN_KEY && key === ADMIN_KEY) {
+    socket.isController = true;
+    console.log("[connect] controller authorized:", socket.id);
+    broadcastQuizStatus();
+  }
+
   socket.on("adminConnect", () => {
     const key = socket.handshake.auth?.adminKey;
     if (!ADMIN_KEY || key !== ADMIN_KEY) {
