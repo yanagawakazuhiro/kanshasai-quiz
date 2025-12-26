@@ -293,6 +293,14 @@ app.get("/admin.html", adminAuth, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
+app.get("/display", adminAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "display.html"));
+});
+
+app.get("/display.html", adminAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "display.html"));
+});
+
 // --- APIエンドポイント (主催者用 CRUD操作) ---
 app.get("/api/questions", adminAuth, async (req, res) => {
   try {
