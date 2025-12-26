@@ -328,3 +328,43 @@ body {
 #return-to-start-btn:hover {
   background: rgba(255, 255, 255, 0.16);
 }
+
+.join-qr-overlay {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 9999;
+}
+
+.join-qr-card {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  padding: 16px 16px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.join-qr-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+#join-qr canvas,
+#join-qr img {
+  width: 180px !important;
+  height: 180px !important;
+  display: block;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+}
+
+.join-qr-url {
+  color: #fff;
+  font-size: 12px;
+  margin-top: 8px;
+  opacity: 0.9;
+  word-break: break-all;
+}

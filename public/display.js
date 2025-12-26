@@ -48,6 +48,36 @@ const containerElement = document.querySelector(".container"); // container 要�
 //戻るボタンのDOM要素
 const returnToStartBtn = document.getElementById("return-to-start-btn");
 
+// --- QR表示 ---
+const qrOverlay = document.getElementById("join-qr-overlay");
+const qrMount = document.getElementById("join-qr");
+const joinUrlEl = document.getElementById("join-url");
+
+// 参加者URL（同じRenderの / でOK）
+const joinUrl = `${location.origin}/`;
+
+// 1回だけ生成して使い回す
+let joinQr = null;
+
+function ensureJoinQr() {
+  if (!qrMount) return;
+  if (!joinQr) {
+    joinUrlEl && (joinUrlEl.textContent = joinUrl);
+    joinQr = new QRCode(qrMount, {
+      text: joinUrl,
+      width: 180,
+      height: 180,
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  }
+}
+
+function setJoinQrVisible(visible) {
+  if (!qrOverlay) return;
+  if (visible) ensureJoinQr();
+  qrOverlay.style.display = visible ? "block" : "none";
+}
+setJoinQrVisible(true);
 let currentQuestionId = null;
 let countdownInterval = null;
 let quizPhase = "waiting"; // 'waiting', 'question', 'timeup', 'results', 'ended'
@@ -72,6 +102,7 @@ socket.on("disconnect", () => {
 socket.on("quizStarted", () => {
   // displayStatusElement はCSSで非表示になる
   // displayStatusElement.textContent = 'クイズ開始！';
+  setJoinQrVisible(false);
 
   // クイズ開始時はquiz-ended-layoutを削除し、終了メッセージエリアを非表示
   containerElement.classList.remove("quiz-ended-layout");
@@ -87,6 +118,7 @@ socket.on("quizStarted", () => {
 
 // サーバーから問題データが送られてきた時
 socket.on("question", (questionData) => {
+  setJoinQrVisible(false);
   currentQuestionId = questionData.id;
   resetResultsUI();
   // 問題文
@@ -233,6 +265,7 @@ socket.on("resetToStart", () => {
 
   countdownElement.textContent = "10";
   countdownElement.style.color = "#ffda6a";
+  setJoinQrVisible(true);
 });
 
 //ランキングを描画する関数
@@ -263,6 +296,7 @@ returnToStartBtn.onclick = () => {
 socket.on("quizStatus", (status) => {
   console.log("--- quizStatus イベント受信 ---");
   console.log("受信したステータスデータ:", status);
+  setJoinQrVisible(!status.isActive);
 
   if (status.isActive) {
     if (status.remainingTime <= 0) {
