@@ -58,18 +58,23 @@ let joinQr = null;
 const qrImageUrl =
   "https://res.cloudinary.com/dbndj9yfr/image/upload/v1766738084/QR_738068_wgke9r.png";
 
-function setJoinQrVisible(visible) {
-  const overlay = document.getElementById("join-qr-overlay");
-  if (!overlay) return;
-  overlay.style.display = visible ? "flex" : "none";
-}
-
 function initJoinQr() {
   if (qrImg) qrImg.src = qrImageUrl;
   if (joinUrlEl) joinUrlEl.textContent = joinUrl;
 }
+const qrBadge = document.getElementById("join-qr-badge");
+
+socket.on("quizStatus", (status) => {
+  if (!qrBadge) return;
+
+  // クイズ中は隠す / 非アクティブなら表示
+  qrBadge.classList.toggle("is-hidden", status.isActive);
+
+  // 見た目用（任意）
+  qrBadge.classList.toggle("is-running", status.isActive);
+  qrBadge.classList.toggle("is-finished", !status.isActive);
+});
 initJoinQr();
-setJoinQrVisible(true);
 let currentQuestionId = null;
 let countdownInterval = null;
 let quizPhase = "waiting"; // 'waiting', 'question', 'timeup', 'results', 'ended'

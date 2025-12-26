@@ -330,61 +330,68 @@ body {
 }
 
 /* === 参加用QR：中央・大きく === */
-#join-qr-overlay {
+.join-qr-badge {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh; /* ★これが重要 */
-  z-index: 999999;
+  left: 24px;
+  bottom: 24px;
+  z-index: 2000;
 
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: rgba(15, 15, 15, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 12px 12px 10px;
+  backdrop-filter: blur(6px);
 
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
-
-  /* 触れない（下のボタン操作を邪魔しない） */
+  /* 操作を邪魔しない */
   pointer-events: none;
 }
 
-#join-qr-overlay .join-qr-card {
-  background: rgba(15, 15, 15, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 28px;
-  padding: 32px 44px 28px;
-  text-align: center;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
-}
-
-#join-qr-overlay .join-qr-title {
+.join-qr-title {
   color: #fff;
-  font-size: 34px;
   font-weight: 800;
-  margin-bottom: 18px;
+  font-size: 14px;
+  margin-bottom: 8px;
+  text-align: left;
 }
 
-#join-qr canvas,
 #join-qr-img {
-  width: 420px;
-  height: 420px;
+  width: 140px;
+  height: 140px;
   background: #fff;
-  padding: 18px;
-  border-radius: 22px;
+  padding: 8px;
+  border-radius: 12px;
   display: block;
-  margin: 0 auto;
 }
 
-#join-qr-overlay .join-qr-url {
-  margin-top: 16px;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 18px;
+.join-qr-url {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 11px;
+  margin-top: 6px;
+  max-width: 170px;
   word-break: break-all;
 }
 
-/* QRオーバーレイはクリックを邪魔しない（強制） */
-#join-qr-overlay,
-#join-qr-overlay * {
-  pointer-events: none !important;
+/* クイズ中はさらに控えめに（任意） */
+.join-qr-badge.is-running {
+  opacity: 0.35;
+  transform: scale(0.92);
+}
+
+/* 結果/ランキング表示中は少し戻す（任意） */
+.join-qr-badge.is-finished {
+  opacity: 0.65;
+  transform: scale(1);
+}
+
+/* 通常は表示 */
+#join-qr-badge {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+/* 非表示状態 */
+#join-qr-badge.is-hidden {
+  opacity: 0;
+  visibility: hidden;
 }
