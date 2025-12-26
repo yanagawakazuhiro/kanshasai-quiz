@@ -274,6 +274,16 @@ async function startEdit(id) {
   if (optionCImageEl) optionCImageEl.value = "";
   if (optionDImageEl) optionDImageEl.value = "";
 
+  const optA = q.options?.find((o) => o.id === "A");
+  const optB = q.options?.find((o) => o.id === "B");
+  const optC = q.options?.find((o) => o.id === "C");
+  const optD = q.options?.find((o) => o.id === "D");
+
+  optionAElement.value = optA?.text || "";
+  optionBElement.value = optB?.text || "";
+  optionCElement.value = optC?.text || "";
+  optionDElement.value = optD?.text || "";
+
   editingQuestionIdEl.value = id;
   if (submitQuestionBtn) submitQuestionBtn.textContent = "更新する";
   if (cancelEditBtn) cancelEditBtn.style.display = "inline-block";
