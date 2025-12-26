@@ -8,9 +8,9 @@ const currentQuestionDisplay = document.getElementById(
 );
 const currentQuestionIndexDisplay = document.getElementById(
   "current-question-index"
-); // 新規追加
-const totalQuestionsDisplay = document.getElementById("total-questions"); // 新規追加
-const quizActiveStatusDisplay = document.getElementById("quiz-active-status"); // 新規追加
+);
+const totalQuestionsDisplay = document.getElementById("total-questions");
+const quizActiveStatusDisplay = document.getElementById("quiz-active-status");
 
 const resetNicknamesBtn = document.getElementById("resetNicknamesBtn");
 
@@ -26,6 +26,23 @@ const optionAImageUrlEl = document.getElementById("optionAImageUrl");
 const optionBImageUrlEl = document.getElementById("optionBImageUrl");
 const optionCImageUrlEl = document.getElementById("optionCImageUrl");
 const optionDImageUrlEl = document.getElementById("optionDImageUrl");
+
+uploadImageAndSetUrl(
+  document.getElementById("optionAImageFile"),
+  document.getElementById("optionAImageUrl")
+);
+uploadImageAndSetUrl(
+  document.getElementById("optionBImageFile"),
+  document.getElementById("optionBImageUrl")
+);
+uploadImageAndSetUrl(
+  document.getElementById("optionCImageFile"),
+  document.getElementById("optionCImageUrl")
+);
+uploadImageAndSetUrl(
+  document.getElementById("optionDImageFile"),
+  document.getElementById("optionDImageUrl")
+);
 
 // サーバー接続時の処理
 socket.on("connect", () => {
@@ -272,3 +289,26 @@ function cancelEdit() {
 }
 
 if (cancelEditBtn) cancelEditBtn.onclick = cancelEdit;
+
+async function uploadImageAndSetUrl(fileInputEl, urlInputEl) {
+  fileInputEl.addEventListener("change", async () => {
+    const file = fileInputEl.files?.[0];
+    if (!file) return;
+
+    const fd = new FormData();
+    fd.append("image", file);
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: fd,
+    });
+
+    if (!res.ok) {
+      alert("画像アップロードに失敗しました");
+      return;
+    }
+
+    const data = await res.json();
+    urlInputEl.value = data.url; // ここがポイント：URL欄に自動で入る
+  });
+}
