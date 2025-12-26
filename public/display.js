@@ -293,7 +293,6 @@ returnToStartBtn.onclick = () => {
 socket.on("quizStatus", (status) => {
   console.log("--- quizStatus イベント受信 ---");
   console.log("受信したステータスデータ:", status);
-  setJoinQrVisible(!status.isActive);
 
   if (status.isActive) {
     if (status.remainingTime <= 0) {
