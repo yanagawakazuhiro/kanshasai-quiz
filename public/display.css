@@ -382,3 +382,9 @@ body {
   font-size: 18px;
   word-break: break-all;
 }
+
+/* QRオーバーレイはクリックを邪魔しない（強制） */
+#join-qr-overlay,
+#join-qr-overlay * {
+  pointer-events: none !important;
+}
