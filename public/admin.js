@@ -298,13 +298,14 @@ async function uploadImageAndSetUrl(fileInputEl, urlInputEl) {
     const fd = new FormData();
     fd.append("image", file);
 
-    const res = await fetch("/api/upload", {
+    const res = await fetch("/api/upload-image", {
       method: "POST",
       body: fd,
     });
 
     if (!res.ok) {
-      alert("画像アップロードに失敗しました");
+      const text = await res.text();
+      alert("画像アップロードに失敗しました: " + res.status + " " + text);
       return;
     }
 
