@@ -86,6 +86,11 @@ socket.on("quizStatus", (status) => {
     status.currentQuestionIndex !== -1 ? status.currentQuestionIndex + 1 : "-";
   totalQuestionsDisplay.textContent = status.totalQuestions;
   quizActiveStatusDisplay.textContent = status.isActive ? "進行中" : "停止中";
+  
+  // 参加者数の更新
+  if (status.connectedUsers !== undefined) {
+    connectedUsersElement.textContent = status.connectedUsers;
+  }
 });
 
 // ニックネームリセットボタンのイベントリスナー

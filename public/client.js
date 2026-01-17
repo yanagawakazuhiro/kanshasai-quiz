@@ -88,6 +88,12 @@ socket.on('question', (questionData) => {
 
     currentQuestionId = questionData.id;
     questionTextElement.textContent = questionData.text;
+    
+    // カウントダウンコンテナを表示（問題が表示されたとき）
+    const countdownContainer = document.getElementById('countdown-container');
+    if (countdownContainer) {
+        countdownContainer.style.display = 'block';
+    }
 
     if (optionsElement) {
         optionsElement.innerHTML = '';
@@ -131,6 +137,12 @@ socket.on('quizEnded', (data) => {
     feedbackElement.textContent = `あなたの最終正解数: ${data.finalScore !== undefined ? data.finalScore : myScore}`;
     feedbackElement.style.color = 'lightgreen';
     statusElement.textContent = 'クイズ終了';
+    
+    // カウントダウンを非表示
+    const countdownContainer = document.getElementById('countdown-container');
+    if (countdownContainer) {
+        countdownContainer.style.display = 'none';
+    }
 
     myScoreElement.textContent = ''; // スコア表示は最終スコアにまとめる
 
@@ -143,41 +155,35 @@ socket.on('quizEnded', (data) => {
 
 // サーバーからカウントダウン情報を受信
 socket.on('countdown', (remainingTime) => {
-    // ここで参加者画面にカウントダウンを表示することも可能
-    // 例: document.getElementById('countdown-participant').textContent = remainingTime;
-    if (remainingTime <= 0) {
-        // 時間切れになったら回答ボタンを無効にする
-        Array.from(optionsElement.children).forEach(button => button.disabled = true);
-        feedbackElement.textContent = '回答時間が終了しました。';
-        feedbackElement.style.color = 'orange';
-    } else {
+    const countdownElement = document.getElementById('countdown');
+    const countdownContainer = document.getElementById('countdown-container');
+    
+    if (remainingTime > 0 && currentQuestionId) {
+        // カウントダウンを表示
+        if (countdownElement) {
+            countdownElement.textContent = remainingTime;
+            countdownContainer.style.display = 'block';
+        }
+        
+        // 残り時間が3秒以下になったら赤色にする
+        if (remainingTime <= 3) {
+            if (countdownElement) countdownElement.style.color = 'red';
+        } else {
+            if (countdownElement) countdownElement.style.color = '#ffda6a';
+        }
+        
         // 回答時間中はボタンを有効にする (問題が表示されていれば)
         if (currentQuestionId && Array.from(optionsElement.children).some(btn => !btn.disabled)) {
             Array.from(optionsElement.children).forEach(button => button.disabled = false);
         }
+    } else {
+        // 時間切れになったら回答ボタンを無効にする
+        if (countdownElement) {
+            countdownElement.textContent = '0';
+            countdownElement.style.color = 'orange';
+        }
+        Array.from(optionsElement.children).forEach(button => button.disabled = true);
+        feedbackElement.textContent = '回答時間が終了しました。';
+        feedbackElement.style.color = 'orange';
     }
-});
-
-// ... (quizEnded イベントの変更) ...
-socket.on('quizEnded', (data) => { // <-- data オブジェクトから finalScore を受け取る
-    questionTextElement.textContent = data.message || 'クイズは終了しました！';
-    optionsElement.innerHTML = ''; // 選択肢をクリア
-    
-    // 変更: フィードバック要素のみを使って最終スコアを表示
-    feedbackElement.textContent = `あなたの最終正解数: ${data.finalScore !== undefined ? data.finalScore : myScore}`;
-    feedbackElement.style.color = 'lightgreen';
-    
-    // 変更: myScoreElement はこの段階では表示せず、feedbackElementにまとめるか、完全に非表示にする
-    myScoreElement.textContent = ''; // または myScoreElement.style.display = 'none';
-
-    // myScore も最終スコアで上書き (次回クイズ開始時のリセットに備える)
-    if (data.finalScore !== undefined) {
-        myScore = data.finalScore;
-    }
-
-    // クイズ終了後は全てのボタンを無効化 (変更なし)
-    Array.from(optionsElement.children).forEach(button => button.disabled = true);
-    
-    // statusElementもクイズ終了表示に
-    statusElement.textContent = 'クイズ終了'; // <-- この行も追加
 });

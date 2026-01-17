@@ -29,6 +29,19 @@ h1 {
     color: #bbb;
 }
 
+#countdown-container {
+    margin: 20px 0;
+    display: none; /* 初期状態は非表示 */
+}
+
+#countdown {
+    font-size: 4em;
+    font-weight: 900;
+    line-height: 1;
+    color: #ffda6a;
+    text-align: center;
+}
+
 #question-area {
     margin-top: 20px;
     background-color: #4a4f5d;
