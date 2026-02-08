@@ -14,6 +14,11 @@ const quizActiveStatusDisplay = document.getElementById("quiz-active-status");
 
 const resetNicknamesBtn = document.getElementById("resetNicknamesBtn");
 
+// タイマー設定関連の要素
+const timerDurationInput = document.getElementById("timerDuration");
+const saveTimerBtn = document.getElementById("saveTimerBtn");
+const timerStatusElement = document.getElementById("timer-status");
+
 const addQuestionForm = document.getElementById("add-question-form");
 const questionTextElement = document.getElementById("questionText");
 const optionAElement = document.getElementById("optionA");
@@ -52,6 +57,7 @@ socket.on("connect", () => {
   socket.emit("adminConnect");
 
   fetchQuestions();
+  fetchTimerDuration(); // タイマー時間を取得
   console.log("adminConnectイベントを送信しました (接続直後)。");
 });
 
@@ -91,7 +97,74 @@ socket.on("quizStatus", (status) => {
   if (status.connectedUsers !== undefined) {
     connectedUsersElement.textContent = status.connectedUsers;
   }
+  
+  // タイマー時間の更新
+  if (status.timerDuration !== undefined && timerDurationInput) {
+    timerDurationInput.value = status.timerDuration;
+  }
 });
+
+// タイマー時間を取得する関数
+async function fetchTimerDuration() {
+  try {
+    const response = await fetch("/api/timer-duration");
+    if (response.ok) {
+      const data = await response.json();
+      if (timerDurationInput) {
+        timerDurationInput.value = data.duration;
+      }
+    }
+  } catch (error) {
+    console.error("タイマー時間の取得中にエラーが発生しました:", error);
+  }
+}
+
+// タイマー時間を保存する関数
+async function saveTimerDuration() {
+  const duration = parseInt(timerDurationInput.value, 10);
+  
+  if (isNaN(duration) || duration < 1 || duration > 300) {
+    if (timerStatusElement) {
+      timerStatusElement.textContent = "タイマー時間は1秒以上300秒以下である必要があります。";
+      timerStatusElement.style.color = "red";
+    }
+    return;
+  }
+  
+  try {
+    const response = await fetch("/api/timer-duration", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ duration }),
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (timerStatusElement) {
+        timerStatusElement.textContent = `タイマー時間を ${data.duration} 秒に設定しました。`;
+        timerStatusElement.style.color = "lightgreen";
+      }
+      console.log(`タイマー時間を ${data.duration} 秒に設定しました。`);
+    } else {
+      const error = await response.json().catch(() => ({}));
+      if (timerStatusElement) {
+        timerStatusElement.textContent = error.message || "タイマー時間の設定に失敗しました。";
+        timerStatusElement.style.color = "red";
+      }
+    }
+  } catch (error) {
+    console.error("タイマー時間の設定中にエラーが発生しました:", error);
+    if (timerStatusElement) {
+      timerStatusElement.textContent = "通信エラーが発生しました。";
+      timerStatusElement.style.color = "red";
+    }
+  }
+}
+
+// タイマー保存ボタンのイベントリスナー
+if (saveTimerBtn) {
+  saveTimerBtn.onclick = saveTimerDuration;
+}
 
 // ニックネームリセットボタンのイベントリスナー
 resetNicknamesBtn.onclick = () => {

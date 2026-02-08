@@ -36,6 +36,7 @@ function setShow(el, show) {
 //初期状態で全てのクイズ制御ボタンを無効化
 startQuizBtnDisplay.disabled = true;
 showResultsBtnDisplay.style.display = "none";
+nextQuestionBtnDisplay.style.display = "none"; // 最初の画面では非表示（1枚目の画像の状態）
 nextQuestionBtnDisplay.disabled = true;
 endQuizBtnDisplay.disabled = true;
 //クイズ終了メッセージとランキング関連のDOM要素
@@ -243,6 +244,7 @@ socket.on("resetToStart", () => {
   // 初期表示
   questionTextElement.textContent = "問題が表示されます";
 
+  // 問題中は2個だけ表示されるので、最初の画面も2個だけ表示
   renderOptions([
     { id: "A", text: " " },
     { id: "B", text: " " },
@@ -256,10 +258,15 @@ socket.on("resetToStart", () => {
   optionsContainer.classList.remove("showing-results");
 
   showResultsBtnDisplay.style.display = "none";
+  // 最初の画面では「次の問題」ボタンを非表示（1枚目の画像の状態）
   nextQuestionBtnDisplay.style.display = "none";
+  nextQuestionBtnDisplay.disabled = true;
 
-  countdownElement.textContent = "10";
-  countdownElement.style.color = "#ffda6a";
+  // タイマー時間をquizStatusから取得して表示（取得できない場合は"--"を表示）
+  if (countdownElement) {
+    countdownElement.textContent = "--";
+    countdownElement.style.color = "#ffda6a";
+  }
 });
 
 //ランキングを描画する関数
@@ -271,11 +278,19 @@ function renderRanking(ranking) {
   }
   ranking.forEach((entry, index) => {
     const li = document.createElement("li");
+    // totalAnswerTimeが存在する場合（0秒も含む）、秒数を表示
+    // 数値型チェックも追加（0はfalsyなので明示的にチェック）
+    const hasTime = typeof entry.totalAnswerTime === 'number';
+    const timeText = hasTime
+      ? ` (${entry.totalAnswerTime}秒)` 
+      : "";
     li.innerHTML = `<span>${index + 1}位: ${
       entry.nickname || "匿名"
-    }</span> <span>${entry.score}問正解</span>`;
+    }</span> <span>${entry.score}問正解${timeText}</span>`;
     rankingList.appendChild(li);
   });
+  // デバッグ用：ランキングデータをコンソールに出力
+  console.log("ランキングデータ:", ranking);
 }
 
 //戻るボタンのイベントリスナー
@@ -342,6 +357,14 @@ socket.on("quizStatus", (status) => {
       endQuizBtnDisplay.disabled = true;
       showResultsBtnDisplay.style.display = "none";
       quizPhase = "waiting";
+      
+      // タイマー時間を表示（クイズが非アクティブで、カウントダウンが初期状態の場合）
+      if (status.timerDuration !== undefined && countdownElement) {
+        if (countdownElement.textContent === "--" || countdownElement.textContent === "10") {
+          countdownElement.textContent = status.timerDuration;
+          countdownElement.style.color = "#ffda6a";
+        }
+      }
     }
 
     if (!socket.sentControllerConnect) {

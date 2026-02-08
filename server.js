@@ -165,9 +165,10 @@ let currentQuestionIndex = -1;
 let questions = [];
 let isQuizActive = false;
 let quizTimer = null;
-const QUESTION_DURATION = 10;
+let QUESTION_DURATION = 10; // タイマー時間（秒）- 管理画面から変更可能
 let currentRemainingTime = QUESTION_DURATION;
 let currentQuestionData = null;
+let currentQuestionStartTime = null; // 現在の問題の開始時刻
 let currentQuestionResults = {
   questionId: null,
   totalVotes: 0,
@@ -188,6 +189,7 @@ function resetGameState() {
   }
   currentRemainingTime = QUESTION_DURATION;
   currentQuestionData = null;
+  currentQuestionStartTime = null; // 問題開始時刻をリセット
   currentQuestionResults = {
     questionId: null,
     totalVotes: 0,
@@ -236,6 +238,7 @@ function startQuestionTimer() {
   if (quizTimer) clearInterval(quizTimer);
 
   currentRemainingTime = QUESTION_DURATION;
+  currentQuestionStartTime = Date.now(); // 問題開始時刻を記録
   isShowingResults = false; // 新しい問題が始まったら結果表示中ではない
   io.emit("countdown", currentRemainingTime);
   broadcastQuizStatus();
@@ -311,6 +314,33 @@ app.put("/api/questions/:id", adminAuth, async (req, res) => {
     new: true,
   });
   res.json(q);
+});
+
+// --- タイマー設定API ---
+app.get("/api/timer-duration", adminAuth, (req, res) => {
+  res.json({ duration: QUESTION_DURATION });
+});
+
+app.put("/api/timer-duration", adminAuth, (req, res) => {
+  const { duration } = req.body;
+  const newDuration = parseInt(duration, 10);
+  
+  if (isNaN(newDuration) || newDuration < 1 || newDuration > 300) {
+    return res.status(400).json({ 
+      message: "タイマー時間は1秒以上300秒以下である必要があります。" 
+    });
+  }
+  
+  QUESTION_DURATION = newDuration;
+  console.log(`タイマー時間を ${QUESTION_DURATION} 秒に変更しました。`);
+  
+  // クイズが進行中でない場合のみ、現在の残り時間も更新
+  if (!isQuizActive) {
+    currentRemainingTime = QUESTION_DURATION;
+  }
+  
+  broadcastQuizStatus(); // ステータスを更新
+  res.json({ duration: QUESTION_DURATION });
 });
 
 // --- ヘルパー関数: スコア更新処理をまとめる ---
@@ -396,16 +426,45 @@ async function updateScoresForCurrentQuestion() {
 //最終ランキングを取得する関数
 async function getFinalRanking() {
   try {
-    // スコア降順、lastConnectedAt (接続が新しいもの) でソートし、上位5名を取得
-    // nickname が '匿名参加者' 以外のユーザーを優先したい場合、別途条件を追加
-    const ranking = await User.find({ nickname: { $ne: "匿名参加者" } }) // ニックネームが設定されているユーザーのみ
-      .sort({ score: -1, lastConnectedAt: 1 }) // スコア降順、接続時間昇順 (同点の場合)
-      .limit(5); // 上位5名
-
-    // ニックネームとスコアのみを抽出して返す
-    return ranking.map((user) => ({
-      nickname: user.nickname,
-      score: user.score,
+    // ニックネームが設定されているユーザーを取得
+    const users = await User.find({ nickname: { $ne: "匿名参加者" } });
+    
+    // 各ユーザーの正解した問題の合計回答時間を計算
+    const usersWithTotalTime = await Promise.all(
+      users.map(async (user) => {
+        // 正解した回答の回答時間の合計を取得
+        const correctAnswers = await Answer.find({
+          userId: user._id,
+          isCorrect: true,
+        });
+        
+        const totalAnswerTime = correctAnswers.reduce((sum, answer) => {
+          return sum + (answer.answerTime || 0);
+        }, 0);
+        
+        return {
+          user: user,
+          totalAnswerTime: totalAnswerTime,
+        };
+      })
+    );
+    
+    // スコア降順、同じスコアの場合は回答時間の合計が小さい順（早押し優先）でソート
+    usersWithTotalTime.sort((a, b) => {
+      if (a.user.score !== b.user.score) {
+        return b.user.score - a.user.score; // スコア降順
+      }
+      return a.totalAnswerTime - b.totalAnswerTime; // 回答時間昇順（短い方が上位）
+    });
+    
+    // 上位5名を取得
+    const topUsers = usersWithTotalTime.slice(0, 5);
+    
+    // ニックネーム、スコア、合計回答時間を返す
+    return topUsers.map((item) => ({
+      nickname: item.user.nickname,
+      score: item.user.score,
+      totalAnswerTime: item.totalAnswerTime,
     }));
   } catch (error) {
     console.error("最終ランキングの取得エラー:", error);
@@ -432,6 +491,7 @@ function sendQuizStatusToSocket(s) {
     currentQuestionOptions: qOptions,
     totalQuestions: questions.length,
     remainingTime: currentRemainingTime,
+    timerDuration: QUESTION_DURATION, // タイマー時間を追加
     connectedUsers: participantCount,
     isShowingResults: isShowingResults,
     isController: s.isController, // IMPORTANT: Use the individual socket's flag
@@ -521,11 +581,17 @@ io.on("connection", async (socket) => {
     const isCorrect = currentQ.correctOptionId === data.selectedOptionId;
     console.log(`回答は ${isCorrect ? "正解" : "不正解"} でした。`);
 
+    // 問題開始からの経過時間を計算（秒）
+    const answerTime = currentQuestionStartTime 
+      ? Math.round((Date.now() - currentQuestionStartTime) / 1000)
+      : null;
+
     const newAnswer = new Answer({
       userId: socket.userId,
       questionId: currentQ._id,
       selectedOptionId: data.selectedOptionId,
       isCorrect: isCorrect,
+      answerTime: answerTime, // 回答時間を記録
     });
     try {
       await newAnswer.save();
