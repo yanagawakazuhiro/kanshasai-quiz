@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>スーパー管理者画面</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background-color: #f5f5f5;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      header {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      h1 {
+        color: #333;
+        font-size: 24px;
+      }
+
+      .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+
+      .logout-btn {
+        padding: 8px 16px;
+        background: #e74c3c;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      .logout-btn:hover {
+        background: #c0392b;
+      }
+
+      .section {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .section h2 {
+        color: #333;
+        margin-bottom: 20px;
+        font-size: 20px;
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 5px;
+        color: #333;
+        font-weight: 500;
+      }
+
+      input[type="text"],
+      input[type="password"],
+      input[type="email"] {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      button {
+        padding: 10px 20px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      button:hover {
+        background: #5568d3;
+      }
+
+      .btn-danger {
+        background: #e74c3c;
+      }
+
+      .btn-danger:hover {
+        background: #c0392b;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+      }
+
+      th,
+      td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+      }
+
+      th {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: #333;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 15px;
+      }
+
+      .stat-card {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 4px;
+        text-align: center;
+      }
+
+      .stat-value {
+        font-size: 32px;
+        font-weight: bold;
+        color: #667eea;
+      }
+
+      .stat-label {
+        color: #666;
+        font-size: 14px;
+        margin-top: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>スーパー管理者画面</h1>
+        <div class="user-info">
+          <span id="username">読み込み中...</span>
+          <button class="logout-btn" id="logoutBtn">ログアウト</button>
+        </div>
+      </header>
+
+      <!-- 運用者管理セクション -->
+      <div class="section">
+        <h2>運用者管理</h2>
+        <form id="createOperatorForm">
+          <div class="form-group">
+            <label for="operatorUsername">ユーザー名</label>
+            <input
+              type="text"
+              id="operatorUsername"
+              required
+              placeholder="運用者ユーザー名"
+            />
+          </div>
+          <div class="form-group">
+            <label for="operatorPassword">パスワード</label>
+            <input
+              type="password"
+              id="operatorPassword"
+              required
+              placeholder="パスワード"
+            />
+          </div>
+          <div class="form-group">
+            <label for="operatorEmail">メールアドレス（任意）</label>
+            <input
+              type="email"
+              id="operatorEmail"
+              placeholder="email@example.com"
+            />
+          </div>
+          <button type="submit">運用者を作成</button>
+        </form>
+
+        <h3 style="margin-top: 30px; margin-bottom: 15px">既存の運用者</h3>
+        <div id="operatorsList">読み込み中...</div>
+      </div>
+
+      <!-- 統計情報セクション -->
+      <div class="section">
+        <h2>全ルーム統計</h2>
+        <div id="statsArea">読み込み中...</div>
+      </div>
+    </div>
+
+    <script>
+      // ログイン状態確認
+      async function checkAuth() {
+        try {
+          const response = await fetch("/api/auth/super-admin/status", {
+            credentials: "include",
+          });
+          const data = await response.json();
+          if (!data.isLoggedIn) {
+            window.location.href = "/super-admin-login.html";
+            return false;
+          }
+          document.getElementById("username").textContent = data.username;
+          return true;
+        } catch (error) {
+          console.error("認証確認エラー:", error);
+          window.location.href = "/super-admin-login.html";
+          return false;
+        }
+      }
+
+      // ログアウト
+      document.getElementById("logoutBtn").addEventListener("click", async () => {
+        try {
+          await fetch("/api/auth/super-admin/logout", {
+            method: "POST",
+            credentials: "include",
+          });
+          window.location.href = "/super-admin-login.html";
+        } catch (error) {
+          console.error("ログアウトエラー:", error);
+        }
+      });
+
+      // 運用者一覧取得
+      async function loadOperators() {
+        try {
+          const response = await fetch("/api/super-admin/operators", {
+            credentials: "include",
+          });
+          if (response.status === 401) {
+            window.location.href = "/super-admin-login.html";
+            return;
+          }
+          const operators = await response.json();
+          renderOperators(operators);
+        } catch (error) {
+          console.error("運用者一覧取得エラー:", error);
+          document.getElementById("operatorsList").textContent =
+            "エラーが発生しました";
+        }
+      }
+
+      // 運用者一覧表示
+      function renderOperators(operators) {
+        const listEl = document.getElementById("operatorsList");
+        if (operators.length === 0) {
+          listEl.innerHTML = "<p>運用者がいません</p>";
+          return;
+        }
+
+        let html = "<table><thead><tr><th>ユーザー名</th><th>ルームID</th><th>メール</th><th>作成日</th><th>操作</th></tr></thead><tbody>";
+        operators.forEach((op) => {
+          html += `<tr>
+            <td>${op.username}</td>
+            <td><code>${op.roomId}</code></td>
+            <td>${op.email || "-"}</td>
+            <td>${new Date(op.createdAt).toLocaleDateString("ja-JP")}</td>
+            <td>
+              <button class="btn-danger" onclick="deleteOperator('${op._id}')">削除</button>
+            </td>
+          </tr>`;
+        });
+        html += "</tbody></table>";
+        listEl.innerHTML = html;
+      }
+
+      // 運用者作成
+      document
+        .getElementById("createOperatorForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const username = document.getElementById("operatorUsername").value;
+          const password = document.getElementById("operatorPassword").value;
+          const email = document.getElementById("operatorEmail").value;
+
+          try {
+            const response = await fetch("/api/super-admin/operators", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ username, password, email }),
+            });
+
+            if (response.status === 401) {
+              window.location.href = "/super-admin-login.html";
+              return;
+            }
+
+            const data = await response.json();
+            if (response.ok) {
+              alert("運用者を作成しました");
+              document.getElementById("createOperatorForm").reset();
+              loadOperators();
+            } else {
+              alert(data.message || "エラーが発生しました");
+            }
+          } catch (error) {
+            console.error("運用者作成エラー:", error);
+            alert("通信エラーが発生しました");
+          }
+        });
+
+      // 運用者削除
+      async function deleteOperator(id) {
+        if (!confirm("本当にこの運用者を削除しますか？")) return;
+
+        try {
+          const response = await fetch(`/api/super-admin/operators/${id}`, {
+            method: "DELETE",
+            credentials: "include",
+          });
+
+          if (response.status === 401) {
+            window.location.href = "/super-admin-login.html";
+            return;
+          }
+
+          if (response.ok) {
+            alert("運用者を削除しました");
+            loadOperators();
+            loadStats();
+          } else {
+            const data = await response.json();
+            alert(data.message || "エラーが発生しました");
+          }
+        } catch (error) {
+          console.error("運用者削除エラー:", error);
+          alert("通信エラーが発生しました");
+        }
+      }
+
+      // 統計情報取得
+      async function loadStats() {
+        try {
+          const response = await fetch("/api/super-admin/stats", {
+            credentials: "include",
+          });
+          if (response.status === 401) {
+            window.location.href = "/super-admin-login.html";
+            return;
+          }
+          const stats = await response.json();
+          renderStats(stats);
+        } catch (error) {
+          console.error("統計情報取得エラー:", error);
+          document.getElementById("statsArea").textContent =
+            "エラーが発生しました";
+        }
+      }
+
+      // 統計情報表示
+      function renderStats(stats) {
+        const statsEl = document.getElementById("statsArea");
+        if (stats.length === 0) {
+          statsEl.innerHTML = "<p>統計情報がありません</p>";
+          return;
+        }
+
+        let html = '<div class="stats-grid">';
+        stats.forEach((stat) => {
+          html += `<div class="stat-card">
+            <div class="stat-value">${stat.operatorName}</div>
+            <div class="stat-label">ルームID: ${stat.roomId}</div>
+            <div style="margin-top: 10px; font-size: 12px; color: #666;">
+              問題: ${stat.questionCount} | 参加者: ${stat.userCount} | 回答: ${stat.answerCount}
+            </div>
+          </div>`;
+        });
+        html += "</div>";
+        statsEl.innerHTML = html;
+      }
+
+      // 初期化
+      (async () => {
+        const isAuthenticated = await checkAuth();
+        if (isAuthenticated) {
+          loadOperators();
+          loadStats();
+        }
+      })();
+    </script>
+  </body>
+</html>

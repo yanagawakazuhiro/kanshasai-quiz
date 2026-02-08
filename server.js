@@ -600,6 +600,24 @@ app.get("/api/super-admin/stats", requireSuperAdmin, async (req, res) => {
   }
 });
 
+// スーパー管理者ログイン画面
+app.get("/super-admin-login", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "super-admin-login.html"));
+});
+
+app.get("/super-admin-login.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "super-admin-login.html"));
+});
+
+// スーパー管理者管理画面（認証が必要）
+app.get("/super-admin", requireSuperAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "super-admin.html"));
+});
+
+app.get("/super-admin.html", requireSuperAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "super-admin.html"));
+});
+
 app.get("/admin", adminAuth, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
