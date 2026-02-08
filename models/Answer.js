@@ -6,7 +6,8 @@ const answerSchema = new mongoose.Schema({
     selectedOptionId: { type: String, required: true },
     isCorrect: { type: Boolean, required: true },
     answerTime: { type: Number }, // 問題開始からの経過時間（秒）
-    timestamp: { type: Date, default: Date.now }
+    timestamp: { type: Date, default: Date.now },
+    roomId: { type: String, required: true, default: "default", index: true } // ルームID
 });
 
 module.exports = mongoose.model('Answer', answerSchema);

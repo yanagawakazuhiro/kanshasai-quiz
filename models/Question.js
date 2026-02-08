@@ -11,6 +11,7 @@ const questionSchema = new mongoose.Schema({
     },
   ],
   correctOptionId: { type: String, required: true }, // 正解
+  roomId: { type: String, required: true, default: "default", index: true }, // ルームID
 });
 
 module.exports = mongoose.model("Question", questionSchema);
