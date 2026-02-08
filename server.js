@@ -30,6 +30,18 @@ const io = socketIo(server);
 
 app.use(express.json());
 
+// CORS設定（開発環境用）
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // セッション設定
 app.use(
   session({
@@ -40,6 +52,7 @@ app.use(
       secure: false, // HTTPSの場合はtrueに変更
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24時間
+      sameSite: "lax", // セッションクッキーの設定を追加
     },
   })
 );
@@ -379,33 +392,54 @@ app.get("/api/auth/operator/status", (req, res) => {
 // スーパー管理者ログイン
 app.post("/api/auth/super-admin/login", async (req, res) => {
   try {
+    console.log("[LOGIN] ログインリクエスト受信:", {
+      username: req.body.username,
+      hasPassword: !!req.body.password,
+      sessionId: req.sessionID,
+    });
+
     const { username, password } = req.body;
     if (!username || !password) {
+      console.log("[LOGIN] ユーザー名またはパスワードが不足");
       return res.status(400).json({ message: "ユーザー名とパスワードが必要です" });
     }
 
     const superAdmin = await SuperAdmin.findOne({ username });
     if (!superAdmin) {
+      console.log(`[LOGIN] スーパー管理者 "${username}" が見つかりません`);
       return res.status(401).json({ message: "ユーザー名またはパスワードが正しくありません" });
     }
 
+    console.log(`[LOGIN] スーパー管理者 "${username}" が見つかりました`);
+
     const passwordMatch = await bcrypt.compare(password, superAdmin.password);
     if (!passwordMatch) {
+      console.log(`[LOGIN] パスワードが一致しません`);
       return res.status(401).json({ message: "ユーザー名またはパスワードが正しくありません" });
     }
+
+    console.log(`[LOGIN] パスワードが一致しました`);
 
     req.session.isSuperAdmin = true;
     req.session.superAdminId = superAdmin._id.toString();
     req.session.username = superAdmin.username;
+
+    console.log(`[LOGIN] セッションに保存:`, {
+      isSuperAdmin: req.session.isSuperAdmin,
+      superAdminId: req.session.superAdminId,
+      username: req.session.username,
+      sessionId: req.sessionID,
+    });
 
     // 最終ログイン時刻を更新
     await SuperAdmin.findByIdAndUpdate(superAdmin._id, {
       lastLoginAt: new Date(),
     });
 
+    console.log(`[LOGIN] ログイン成功: ${username}`);
     res.json({ success: true, username: superAdmin.username });
   } catch (error) {
-    console.error("スーパー管理者ログインエラー:", error);
+    console.error("[LOGIN] スーパー管理者ログインエラー:", error);
     res.status(500).json({ message: "ログイン処理中にエラーが発生しました" });
   }
 });
