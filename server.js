@@ -847,11 +847,16 @@ function broadcastQuizStatus(roomId) {
     io.sockets.sockets.forEach((s) => sendQuizStatusToSocket(s));
   } else {
     // 指定されたルームのクライアントにのみ送信
-    io.to(roomId).sockets.forEach((s) => {
-      if (s.roomId === roomId) {
-        sendQuizStatusToSocket(s);
-      }
-    });
+    // Socket.IOのルーム機能を使用して、ルーム内のソケットを取得
+    const room = io.sockets.adapter.rooms.get(roomId);
+    if (room) {
+      room.forEach((socketId) => {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket && socket.roomId === roomId) {
+          sendQuizStatusToSocket(socket);
+        }
+      });
+    }
   }
 }
 
