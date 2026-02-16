@@ -1,12 +1,5 @@
 require("dotenv").config();
 
-const basicAuth = require("express-basic-auth");
-
-const adminAuth = basicAuth({
-  users: { [process.env.ADMIN_USER]: process.env.ADMIN_PASS },
-  challenge: true,
-});
-
 const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
@@ -56,12 +49,6 @@ app.use(
     },
   })
 );
-
-// 既存のBasic認証は後方互換性のため残す（オプション）
-app.use("/display.html", adminAuth);
-app.use("/admin.html", adminAuth);
-app.use("/admin", adminAuth);
-app.use("/display", adminAuth);
 
 app.use(express.static("public"));
 
@@ -162,12 +149,16 @@ const uploadMemory = multer({
   storage: multer.memoryStorage(),
 });
 
-function uploadBufferToCloudinary(buffer) {
+function uploadBufferToCloudinary(buffer, roomId, resourceType = "image") {
   return new Promise((resolve, reject) => {
+    // 運用者ごとにフォルダを分離
+    const folder = roomId 
+      ? (resourceType === "video" ? `quiz_videos/${roomId}` : `quiz_images/${roomId}`)
+      : (resourceType === "video" ? "quiz_videos" : "quiz_images");
     const stream = cloudinary.uploader.upload_stream(
       {
-        folder: "quiz_images",
-        resource_type: "image",
+        folder: folder,
+        resource_type: resourceType,
       },
       (error, result) => {
         if (error) reject(error);
@@ -180,6 +171,7 @@ function uploadBufferToCloudinary(buffer) {
 
 app.post(
   "/api/upload-image",
+  requireOperator, // 運用者認証が必要
   uploadMemory.single("image"),
   async (req, res) => {
     try {
@@ -187,14 +179,104 @@ app.post(
         return res.status(400).json({ message: "画像がありません" });
       }
 
-      const result = await uploadBufferToCloudinary(req.file.buffer);
+      const roomId = req.roomId; // requireOperatorミドルウェアで自動設定される
+      if (!roomId) {
+        return res.status(400).json({ message: "ルームIDが取得できません" });
+      }
+
+      console.log(`[${roomId}] 画像をアップロード中...`);
+      const result = await uploadBufferToCloudinary(req.file.buffer, roomId, "image");
+      console.log(`[${roomId}] 画像アップロード成功: ${result.secure_url}`);
       res.json({ url: result.secure_url }); // ← MongoDBに保存するURL
     } catch (err) {
-      console.error(err);
+      console.error("画像アップロードエラー:", err);
       res.status(500).json({ message: "画像アップロード失敗" });
     }
   }
 );
+
+// 動画アップロードエンドポイント
+app.post(
+  "/api/upload-video",
+  requireOperator, // 運用者認証が必要
+  uploadMemory.single("video"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "動画がありません" });
+      }
+
+      const roomId = req.roomId; // requireOperatorミドルウェアで自動設定される
+      if (!roomId) {
+        return res.status(400).json({ message: "ルームIDが取得できません" });
+      }
+
+      console.log(`[${roomId}] 動画をアップロード中...`);
+      const result = await uploadBufferToCloudinary(req.file.buffer, roomId, "video");
+      console.log(`[${roomId}] 動画アップロード成功: ${result.secure_url}`);
+      res.json({ url: result.secure_url }); // ← MongoDBに保存するURL
+    } catch (err) {
+      console.error("動画アップロードエラー:", err);
+      res.status(500).json({ message: "動画アップロード失敗" });
+    }
+  }
+);
+
+// BGMアップロードエンドポイント
+app.post(
+  "/api/upload-bgm",
+  requireOperator, // 運用者認証が必要
+  uploadMemory.single("bgm"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "BGMファイルがありません" });
+      }
+
+      const roomId = req.roomId; // requireOperatorミドルウェアで自動設定される
+      if (!roomId) {
+        return res.status(400).json({ message: "ルームIDが取得できません" });
+      }
+
+      console.log(`[${roomId}] BGMをアップロード中...`);
+      const result = await uploadBufferToCloudinary(req.file.buffer, roomId, "video"); // 音声ファイルもvideoリソースタイプでアップロード
+      console.log(`[${roomId}] BGMアップロード成功: ${result.secure_url}`);
+      
+      // OperatorのbgmUrlを更新
+      const operator = await Operator.findOne({ roomId });
+      if (operator) {
+        operator.bgmUrl = result.secure_url;
+        await operator.save();
+        console.log(`[${roomId}] BGM URLを保存しました`);
+      }
+      
+      res.json({ url: result.secure_url });
+    } catch (err) {
+      console.error("BGMアップロードエラー:", err);
+      res.status(500).json({ message: "BGMアップロード失敗" });
+    }
+  }
+);
+
+// BGM削除エンドポイント
+app.delete("/api/operator/bgm", requireOperator, async (req, res) => {
+  try {
+    const roomId = req.roomId;
+    const operator = await Operator.findOne({ roomId });
+    
+    if (operator) {
+      operator.bgmUrl = null;
+      await operator.save();
+      console.log(`[${roomId}] BGMを削除しました`);
+      res.json({ message: "BGMを削除しました" });
+    } else {
+      res.status(404).json({ message: "運用者が見つかりません" });
+    }
+  } catch (err) {
+    console.error("BGM削除エラー:", err);
+    res.status(500).json({ message: "BGM削除失敗" });
+  }
+});
 
 // --- ゲームの状態管理（ルーム単位） ---
 class RoomState {
@@ -294,6 +376,21 @@ function startQuestionTimer(roomId) {
   const roomState = getRoomState(roomId);
   if (roomState.quizTimer) clearInterval(roomState.quizTimer);
 
+  // 動画があるかどうかをチェック
+  const hasVideo = roomState.currentQuestionData?.options?.some(
+    (opt) => opt.videoUrl && opt.videoUrl.trim() !== ""
+  );
+  
+  if (hasVideo) {
+    console.log(`[${roomId}] 動画があるため、タイマーを開始しません`);
+    roomState.currentRemainingTime = roomState.QUESTION_DURATION;
+    roomState.currentQuestionStartTime = Date.now();
+    roomState.isShowingResults = false;
+    // タイマーを開始せず、カウントダウンも送信しない
+    broadcastQuizStatus(roomId);
+    return;
+  }
+
   roomState.currentRemainingTime = roomState.QUESTION_DURATION;
   roomState.currentQuestionStartTime = Date.now(); // 問題開始時刻を記録
   roomState.isShowingResults = false; // 新しい問題が始まったら結果表示中ではない
@@ -377,12 +474,15 @@ app.post("/api/auth/operator/logout", (req, res) => {
 });
 
 // 運用者ログイン状態確認
-app.get("/api/auth/operator/status", (req, res) => {
+app.get("/api/auth/operator/status", async (req, res) => {
   if (req.session && req.session.operatorId) {
+    // Operator情報を取得してBGM URLを含める
+    const operator = await Operator.findById(req.session.operatorId);
     res.json({
       isLoggedIn: true,
       roomId: req.session.roomId,
       username: req.session.username,
+      bgmUrl: operator?.bgmUrl || null,
     });
   } else {
     res.json({ isLoggedIn: false });
@@ -618,20 +718,31 @@ app.get("/super-admin.html", requireSuperAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "super-admin.html"));
 });
 
-app.get("/admin", adminAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "admin.html"));
+// 運用者ログイン画面
+app.get("/operator-login", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "operator-login.html"));
 });
 
-app.get("/admin.html", adminAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "admin.html"));
+app.get("/operator-login.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "operator-login.html"));
 });
 
-app.get("/display", adminAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "display.html"));
+// 運用者管理画面（認証が必要）
+app.get("/operator-admin", requireOperator, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "operator-admin.html"));
 });
 
-app.get("/display.html", adminAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "display.html"));
+app.get("/operator-admin.html", requireOperator, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "operator-admin.html"));
+});
+
+// 運用者表示画面（認証が必要）
+app.get("/operator-display", requireOperator, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "operator-display.html"));
+});
+
+app.get("/operator-display.html", requireOperator, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "operator-display.html"));
 });
 
 // --- APIエンドポイント (主催者用 CRUD操作) ---
@@ -913,8 +1024,6 @@ function broadcastQuizStatus(roomId) {
 }
 
 // --- Socket.IO接続イベント（ルーム対応） ---
-const ADMIN_KEY = process.env.ADMIN_KEY;
-
 io.on("connection", async (socket) => {
   socket.isAdmin = false;
   socket.isController = false;
@@ -927,30 +1036,26 @@ io.on("connection", async (socket) => {
   socket.join(roomId); // Socket.IOのルーム機能を使用
   console.log(`[${roomId}] ソケット ${socket.id} が接続しました。`);
 
-  const key = String(
-    socket.handshake.auth?.adminKey ?? socket.handshake.query?.adminKey ?? ""
-  ).trim();
-  if (ADMIN_KEY && key === ADMIN_KEY) {
-    socket.isController = true;
-    console.log(`[${roomId}] [connect] controller authorized:`, socket.id);
-    broadcastQuizStatus(roomId);
-  }
-
-  socket.on("adminConnect", () => {
-    const key = socket.handshake.auth?.adminKey;
-    if (!ADMIN_KEY || key !== ADMIN_KEY) {
-      console.log(`[${roomId}] Rejected adminConnect`, socket.id);
-      return;
-    }
+  // 運用者認証（管理画面用）
+  socket.on("adminConnect", async () => {
+    // セッション情報はSocket.IOから直接取得できないため、
+    // 運用者は既にログイン済みで、roomIdが一致することを前提とする
+    // 実際の認証はHTTPリクエストレベルで行われる
     socket.isAdmin = true;
     socket.join("admins");
     console.log(`[${roomId}] Admin connected`, socket.id);
     broadcastQuizStatus(roomId);
   });
-  socket.on("controllerConnect", () => {
-    const key = socket.handshake.auth?.adminKey;
-    if (!ADMIN_KEY || key !== ADMIN_KEY) return;
+
+  // 運用者認証（表示画面用）
+  socket.on("controllerConnect", async () => {
+    // セッション情報はSocket.IOから直接取得できないため、
+    // 運用者は既にログイン済みで、roomIdが一致することを前提とする
+    // 実際の認証はHTTPリクエストレベルで行われる
     socket.isController = true;
+    console.log(`[${roomId}] Controller connected`, socket.id);
+    // 問題をロードしてからステータスを送信
+    await loadQuestions(roomId);
     broadcastQuizStatus(roomId);
   });
 
@@ -1108,32 +1213,38 @@ io.on("connection", async (socket) => {
             answeredUserIds: new Set(),
           };
 
-          for (const s of io.to(roomId).sockets) {
-            if (s.roomId !== roomId) continue;
-            try {
-              if (!s.isAdmin && !s.isController) {
-                s.emit("question", {
-                  id: roomState.currentQuestionData._id.toString(),
-                  text: roomState.currentQuestionData.text,
-                  options: roomState.currentQuestionData.options,
-                  newScore: 0,
-                });
-                console.log(
-                  `[${roomId}] [startQuiz] 参加者 ${s.id} に最初の問題とスコア0を送信。`
-                );
-              } else {
-                s.emit("question", {
-                  id: roomState.currentQuestionData._id.toString(),
-                  text: roomState.currentQuestionData.text,
-                  options: roomState.currentQuestionData.options,
-                });
-                console.log(
-                  `[${roomId}] [startQuiz] 管理/コントローラー画面 ${s.id} に最初の問題を送信。`
-                );
+          // ルーム内のソケットを取得
+          const room = io.sockets.adapter.rooms.get(roomId);
+          if (room) {
+            room.forEach((socketId) => {
+              const s = io.sockets.sockets.get(socketId);
+              if (s && s.roomId === roomId) {
+                try {
+                  if (!s.isAdmin && !s.isController) {
+                    s.emit("question", {
+                      id: roomState.currentQuestionData._id.toString(),
+                      text: roomState.currentQuestionData.text,
+                      options: roomState.currentQuestionData.options,
+                      newScore: 0,
+                    });
+                    console.log(
+                      `[${roomId}] [startQuiz] 参加者 ${s.id} に最初の問題とスコア0を送信。`
+                    );
+                  } else {
+                    s.emit("question", {
+                      id: roomState.currentQuestionData._id.toString(),
+                      text: roomState.currentQuestionData.text,
+                      options: roomState.currentQuestionData.options,
+                    });
+                    console.log(
+                      `[${roomId}] [startQuiz] 管理/コントローラー画面 ${s.id} に最初の問題を送信。`
+                    );
+                  }
+                } catch (emitError) {
+                  console.error(`[${roomId}] [startQuiz] 送信エラー (ソケット ${s.id}):`, emitError);
+                }
               }
-            } catch (emitError) {
-              console.error(`[${roomId}] [startQuiz] 送信エラー (ソケット ${s.id}):`, emitError);
-            }
+            });
           }
           console.log(`[${roomId}] クイズを開始しました。最初の問題を送信。`);
           startQuestionTimer(roomId);
@@ -1158,46 +1269,57 @@ io.on("connection", async (socket) => {
               correctOptionId: roomState.currentQuestionData.correctOptionId,
               answeredUserIds: new Set(),
             };
-            for (const s of io.to(roomId).sockets) {
-              if (s.roomId === roomId) {
-                roomState.socketAnsweredFlags.set(s.id, false);
-              }
+            // ルーム内のソケットを取得してフラグをリセット
+            const roomForReset = io.sockets.adapter.rooms.get(roomId);
+            if (roomForReset) {
+              roomForReset.forEach((socketId) => {
+                const s = io.sockets.sockets.get(socketId);
+                if (s && s.roomId === roomId) {
+                  roomState.socketAnsweredFlags.set(s.id, false);
+                }
+              });
             }
 
-            for (const s of io.to(roomId).sockets) {
-              if (s.roomId !== roomId) continue;
-              try {
-                if (!s.isAdmin && !s.isController) {
-                  const participantUser = await User.findOne({ _id: s.userId, roomId: roomId });
-                  s.emit("question", {
-                    id: roomState.currentQuestionData._id,
-                    text: roomState.currentQuestionData.text,
-                    options: roomState.currentQuestionData.options,
-                    newScore: participantUser ? participantUser.score : 0,
-                  });
-                  console.log(
-                    `[${roomId}] [nextQuestion] 参加者 ${s.id} (${
-                      s.userId
-                    }) に問題とスコアを送信。スコア: ${
-                      participantUser ? participantUser.score : 0
-                    }`
-                  );
-                } else {
-                  s.emit("question", {
-                    id: roomState.currentQuestionData._id.toString(),
-                    text: roomState.currentQuestionData.text,
-                    options: roomState.currentQuestionData.options,
-                  });
-                  console.log(
-                    `[${roomId}] [nextQuestion] 管理/コントローラー画面 ${s.id} に問題を送信。`
-                  );
+            // ルーム内のソケットに問題を送信
+            const roomForQuestion = io.sockets.adapter.rooms.get(roomId);
+            if (roomForQuestion) {
+              roomForQuestion.forEach(async (socketId) => {
+                const s = io.sockets.sockets.get(socketId);
+                if (s && s.roomId === roomId) {
+                  try {
+                    if (!s.isAdmin && !s.isController) {
+                      const participantUser = await User.findOne({ _id: s.userId, roomId: roomId });
+                      s.emit("question", {
+                        id: roomState.currentQuestionData._id,
+                        text: roomState.currentQuestionData.text,
+                        options: roomState.currentQuestionData.options,
+                        newScore: participantUser ? participantUser.score : 0,
+                      });
+                      console.log(
+                        `[${roomId}] [nextQuestion] 参加者 ${s.id} (${
+                          s.userId
+                        }) に問題とスコアを送信。スコア: ${
+                          participantUser ? participantUser.score : 0
+                        }`
+                      );
+                    } else {
+                      s.emit("question", {
+                        id: roomState.currentQuestionData._id.toString(),
+                        text: roomState.currentQuestionData.text,
+                        options: roomState.currentQuestionData.options,
+                      });
+                      console.log(
+                        `[${roomId}] [nextQuestion] 管理/コントローラー画面 ${s.id} に問題を送信。`
+                      );
+                    }
+                  } catch (emitError) {
+                    console.error(
+                      `[${roomId}] [nextQuestion] 問題またはスコア送信中にエラー (ソケット ${s.id}):`,
+                      emitError
+                    );
+                  }
                 }
-              } catch (emitError) {
-                console.error(
-                  `[${roomId}] [nextQuestion] 問題またはスコア送信中にエラー (ソケット ${s.id}):`,
-                  emitError
-                );
-              }
+              });
             }
             console.log(`[${roomId}] 次の問題を送信しました。`);
             startQuestionTimer(roomId);
@@ -1206,29 +1328,35 @@ io.on("connection", async (socket) => {
 
             const finalRankingData = await getFinalRanking(roomId);
 
-            for (const s of io.to(roomId).sockets) {
-              if (s.roomId !== roomId) continue;
-              try {
-                if (!s.isAdmin && !s.isController) {
-                  const participantUser = await User.findOne({ _id: s.userId, roomId: roomId });
-                  s.emit("quizEnded", {
-                    message: "全問終了しました！",
-                    finalScore: participantUser ? participantUser.score : 0,
-                  });
-                } else if (s.isController) {
-                  s.emit("quizEnded", {
-                    message: "全問終了しました。",
-                    finalRanking: finalRankingData,
-                  });
-                } else {
-                  s.emit("quizEnded", { message: "クイズが終了しました。" });
+            // ルーム内のソケットに終了メッセージを送信
+            const roomForEnd = io.sockets.adapter.rooms.get(roomId);
+            if (roomForEnd) {
+              roomForEnd.forEach(async (socketId) => {
+                const s = io.sockets.sockets.get(socketId);
+                if (s && s.roomId === roomId) {
+                  try {
+                    if (!s.isAdmin && !s.isController) {
+                      const participantUser = await User.findOne({ _id: s.userId, roomId: roomId });
+                      s.emit("quizEnded", {
+                        message: "全問終了しました！",
+                        finalScore: participantUser ? participantUser.score : 0,
+                      });
+                    } else if (s.isController) {
+                      s.emit("quizEnded", {
+                        message: "全問終了しました。",
+                        finalRanking: finalRankingData,
+                      });
+                    } else {
+                      s.emit("quizEnded", { message: "クイズが終了しました。" });
+                    }
+                  } catch (emitError) {
+                    console.error(
+                      `[${roomId}] [nextQuestion-quizEnded] 終了メッセージ送信中にエラー (ソケット ${s.id}):`,
+                      emitError
+                    );
+                  }
                 }
-              } catch (emitError) {
-                console.error(
-                  `[${roomId}] [nextQuestion-quizEnded] 終了メッセージ送信中にエラー (ソケット ${s.id}):`,
-                  emitError
-                );
-              }
+              });
             }
 
             roomState.isQuizActive = false;
@@ -1242,10 +1370,15 @@ io.on("connection", async (socket) => {
               answeredUserIds: new Set(),
             };
             roomState.isShowingResults = false;
-            for (const s of io.to(roomId).sockets) {
-              if (s.roomId === roomId) {
-                roomState.socketAnsweredFlags.set(s.id, false);
-              }
+            // ルーム内のソケットのフラグをリセット
+            const roomForFlags = io.sockets.adapter.rooms.get(roomId);
+            if (roomForFlags) {
+              roomForFlags.forEach((socketId) => {
+                const s = io.sockets.sockets.get(socketId);
+                if (s && s.roomId === roomId) {
+                  roomState.socketAnsweredFlags.set(s.id, false);
+                }
+              });
             }
             console.log(`[${roomId}] クイズが終了しました (全問終了)。`);
           }
@@ -1259,43 +1392,58 @@ io.on("connection", async (socket) => {
 
           console.log(`[${roomId}] 主催者によってクイズが終了されました。`);
 
-          for (const s of io.to(roomId).sockets) {
-            if (s.roomId !== roomId) continue;
-            try {
-              if (!s.isAdmin && !s.isController) {
-                const participantUser = await User.findOne({ _id: s.userId, roomId: roomId });
-                s.emit("quizEnded", {
-                  message: "クイズが終了しました！",
-                  finalScore: participantUser ? participantUser.score : 0,
-                  finalRanking: finalRankingData,
-                });
-                console.log(
-                  `[${roomId}] [endQuiz] 参加者 ${s.id} に最終スコア (${
-                    participantUser ? participantUser.score : 0
-                  }) を送信しました。`
-                );
-              } else if (s.isController) {
-                s.emit("quizEnded", {
-                  message: "クイズが終了しました。",
-                  finalRanking: finalRankingData,
-                });
-              } else {
-                s.emit("quizEnded", { message: "クイズが終了しました。" });
+          // ルーム内のソケットに終了メッセージを送信
+          const roomForEndQuiz = io.sockets.adapter.rooms.get(roomId);
+          if (roomForEndQuiz) {
+            // forEachではなく、Promise.allを使用して非同期処理を適切に処理
+            const promises = Array.from(roomForEndQuiz).map(async (socketId) => {
+              const s = io.sockets.sockets.get(socketId);
+              if (s && s.roomId === roomId) {
+                try {
+                  if (!s.isAdmin && !s.isController) {
+                    const participantUser = await User.findOne({ _id: s.userId, roomId: roomId });
+                    s.emit("quizEnded", {
+                      message: "クイズが終了しました！",
+                      finalScore: participantUser ? participantUser.score : 0,
+                      finalRanking: finalRankingData,
+                    });
+                    console.log(
+                      `[${roomId}] [endQuiz] 参加者 ${s.id} に最終スコア (${
+                        participantUser ? participantUser.score : 0
+                      }) を送信しました。`
+                    );
+                  } else if (s.isController) {
+                    s.emit("quizEnded", {
+                      message: "クイズが終了しました。",
+                      finalRanking: finalRankingData,
+                    });
+                  } else {
+                    s.emit("quizEnded", { message: "クイズが終了しました。" });
+                  }
+                } catch (emitError) {
+                  console.error(
+                    `[${roomId}] [endQuiz] 終了メッセージ送信中にエラー (ソケット ${s.id}):`,
+                    emitError
+                  );
+                }
               }
-            } catch (emitError) {
-              console.error(
-                `[${roomId}] [endQuiz] 終了メッセージ送信中にエラー (ソケット ${s.id}):`,
-                emitError
-              );
-            }
+            });
+            await Promise.all(promises);
           }
         } else if (commandData.type === "showResults") {
+          // 動画があるかどうかをチェック
+          const hasVideo = roomState.currentQuestionData?.options?.some(
+            (opt) => opt.videoUrl && opt.videoUrl.trim() !== ""
+          );
+          
           if (
             !roomState.isQuizActive ||
-            roomState.currentRemainingTime > 0 ||
+            (!hasVideo && roomState.currentRemainingTime > 0) ||
             !roomState.currentQuestionData
           ) {
-            socket.emit("message", "まだ結果を表示できません。");
+            if (!hasVideo) {
+              socket.emit("message", "まだ結果を表示できません。");
+            }
             return;
           }
           console.log(`[${roomId}] 結果表示コマンドを受信しました。`);

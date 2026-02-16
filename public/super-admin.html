@@ -285,6 +285,7 @@
             <td>${op.email || "-"}</td>
             <td>${new Date(op.createdAt).toLocaleDateString("ja-JP")}</td>
             <td>
+              <button class="btn-primary" onclick="window.open('/super-admin-display.html?roomId=${op.roomId}', '_blank')" style="margin-right: 8px;">表示画面を開く</button>
               <button class="btn-danger" onclick="deleteOperator('${op._id}')">削除</button>
             </td>
           </tr>`;

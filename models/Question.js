@@ -8,6 +8,7 @@ const questionSchema = new mongoose.Schema({
       id: { type: String, required: true }, // A / B / C / D
       text: { type: String, required: true }, // 選択肢テキスト
       imageUrl: { type: String }, // 画像URL
+      videoUrl: { type: String }, // 動画URL
     },
   ],
   correctOptionId: { type: String, required: true }, // 正解

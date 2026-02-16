@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>クイズ管理画面 - 主催者</title>
+    <title>運用者管理画面</title>
     <link rel="stylesheet" href="style.css" />
     <style>
       /* 管理画面用の追加CSS */
@@ -13,8 +13,34 @@
       .container {
         max-width: 800px;
       }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      .header-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+      .logout-btn {
+        padding: 8px 16px;
+        background: #e74c3c;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .logout-btn:hover {
+        background: #c0392b;
+      }
+      .room-info {
+        color: #61dafb;
+        font-size: 14px;
+      }
       #question-management {
-        /* admin-controls がなくなるので、margin-top を調整するなど */
         margin-top: 20px;
         padding: 15px;
         background-color: #4a4f5d;
@@ -69,7 +95,6 @@
         margin-bottom: 5px;
         font-weight: bold;
       }
-      /* 新たに追加: ステータス表示用のスタイル */
       #current-quiz-status {
         margin-top: 20px;
         padding: 15px;
@@ -88,7 +113,7 @@
         text-align: center;
       }
       #nickname-reset-controls button {
-        background-color: #f44336; /* 赤色で目立たせる */
+        background-color: #f44336;
         color: white;
         border: none;
         padding: 10px 20px;
@@ -114,9 +139,20 @@
   </head>
   <body>
     <div class="container">
-      <h1>クイズ管理画面</h1>
-      <p id="admin-status">サーバーに接続中...</p>
-      <!-- 新たに読み取り専用のクイズステータス表示を追加 -->
+      <header>
+        <div>
+          <h1>運用者管理画面</h1>
+          <p id="admin-status">サーバーに接続中...</p>
+        </div>
+        <div class="header-info">
+          <span class="room-info" id="roomIdDisplay">ルームID: 読み込み中...</span>
+          <button id="openDisplayBtn" style="padding: 8px 16px; background: #61dafb; color: #282c34; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px;">
+            表示画面を開く
+          </button>
+          <button class="logout-btn" id="logoutBtn">ログアウト</button>
+        </div>
+      </header>
+
       <div id="current-quiz-status">
         <h2>現在のクイズ状況</h2>
         <p>現在の接続中の参加者数: <span id="connected-users">0</span></p>
@@ -147,6 +183,25 @@
         <p id="timer-status" style="margin-top: 10px; font-size: 0.9em; color: #bbb;"></p>
       </div>
 
+      <div id="bgm-settings" style="margin-top: 20px; padding: 15px; background-color: #4a4f5d; border-radius: 8px; text-align: left;">
+        <h2>BGM設定</h2>
+        <div style="margin-top: 10px;">
+          <label for="bgmFile">BGMファイル:</label>
+          <input id="bgmFile" type="file" accept="audio/*,video/*" style="margin-top: 5px; margin-bottom: 10px; display: block;" />
+          <button id="uploadBgmBtn" style="padding: 5px 15px; background-color: #61dafb; color: #282c34; border: none; border-radius: 5px; cursor: pointer;">
+            BGMをアップロード
+          </button>
+          <p id="bgm-status" style="margin-top: 10px; font-size: 0.9em; color: #bbb;"></p>
+          <div id="bgm-preview" style="margin-top: 10px; display: none;">
+            <p style="font-size: 0.9em; color: #61dafb;">現在のBGM:</p>
+            <audio id="bgm-preview-audio" controls style="width: 100%; margin-top: 5px;"></audio>
+            <button id="removeBgmBtn" style="margin-top: 10px; padding: 5px 15px; background-color: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer;">
+              BGMを削除
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div id="nickname-reset-controls">
         <h2>参加者ニックネーム管理</h2>
         <button id="resetNicknamesBtn">参加者ニックネームをリセット</button>
@@ -172,6 +227,10 @@
             <input id="optionAImageUrl" type="text" placeholder="https://..." />
             <label>選択肢A 画像ファイル:</label>
             <input id="optionAImageFile" type="file" accept="image/*" />
+            <label>選択肢A 動画URL:</label>
+            <input id="optionAVideoUrl" type="text" placeholder="https://..." />
+            <label>選択肢A 動画ファイル:</label>
+            <input id="optionAVideoFile" type="file" accept="video/*" />
           </div>
           <div class="form-group">
             <label for="optionB">選択肢 B:</label>
@@ -180,6 +239,10 @@
             <input id="optionBImageUrl" type="text" placeholder="https://..." />
             <label>選択肢B 画像ファイル:</label>
             <input id="optionBImageFile" type="file" accept="image/*" />
+            <label>選択肢B 動画URL:</label>
+            <input id="optionBVideoUrl" type="text" placeholder="https://..." />
+            <label>選択肢B 動画ファイル:</label>
+            <input id="optionBVideoFile" type="file" accept="video/*" />
           </div>
           <div class="form-group">
             <label for="optionC">選択肢 C:</label>
@@ -188,6 +251,10 @@
             <input id="optionCImageUrl" type="text" placeholder="https://..." />
             <label>選択肢C 画像ファイル:</label>
             <input id="optionCImageFile" type="file" accept="image/*" />
+            <label>選択肢C 動画URL:</label>
+            <input id="optionCVideoUrl" type="text" placeholder="https://..." />
+            <label>選択肢C 動画ファイル:</label>
+            <input id="optionCVideoFile" type="file" accept="video/*" />
           </div>
           <div class="form-group">
             <label for="optionD">選択肢 D:</label>
@@ -196,6 +263,10 @@
             <input id="optionDImageUrl" type="text" placeholder="https://..." />
             <label>選択肢D 画像ファイル:</label>
             <input id="optionDImageFile" type="file" accept="image/*" />
+            <label>選択肢D 動画URL:</label>
+            <input id="optionDVideoUrl" type="text" placeholder="https://..." />
+            <label>選択肢D 動画ファイル:</label>
+            <input id="optionDVideoFile" type="file" accept="video/*" />
           </div>
           <div class="form-group">
             <label for="correctOption">正解の選択肢ID (A, B, C, D):</label>
@@ -226,6 +297,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="admin.js"></script>
+    <script src="operator-admin.js"></script>
   </body>
 </html>
