@@ -160,6 +160,87 @@
         font-size: 14px;
         margin-top: 5px;
       }
+
+      /* モーダルスタイル */
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0, 0, 0, 0.5);
+      }
+
+      .modal-content {
+        background-color: #fefefe;
+        margin: 10% auto;
+        padding: 30px;
+        border: 1px solid #888;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 500px;
+        position: relative;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      }
+
+      .modal-content h2 {
+        margin-top: 0;
+        margin-bottom: 20px;
+        color: #333;
+        font-size: 20px;
+      }
+
+      .close {
+        color: #aaa;
+        position: absolute;
+        top: 15px;
+        right: 20px;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+        line-height: 1;
+        border: none;
+        background: none;
+        padding: 0;
+      }
+
+      .close:hover,
+      .close:focus {
+        color: #000;
+      }
+
+      #editOperatorForm .form-group {
+        margin-bottom: 15px;
+      }
+
+      #editOperatorForm label {
+        display: block;
+        margin-bottom: 5px;
+        color: #333;
+        font-weight: 500;
+      }
+
+      #editOperatorForm input[type="text"],
+      #editOperatorForm input[type="password"],
+      #editOperatorForm input[type="email"] {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+
+      #editOperatorForm .form-group .hint {
+        font-size: 12px;
+        color: #666;
+        font-weight: normal;
+        margin-top: 3px;
+        margin-bottom: 5px;
+      }
     </style>
   </head>
   <body>
@@ -216,6 +297,47 @@
       </div>
     </div>
 
+    <!-- 編集モーダル -->
+    <div id="editModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="closeEditModal()">&times;</span>
+        <h2>運用者を編集</h2>
+        <form id="editOperatorForm">
+          <input type="hidden" id="editOperatorId" />
+          <div class="form-group">
+            <label for="editUsername">ユーザー名</label>
+            <input
+              type="text"
+              id="editUsername"
+              required
+              placeholder="運用者ユーザー名"
+            />
+          </div>
+          <div class="form-group">
+            <label for="editPassword">パスワード（変更する場合のみ入力）</label>
+            <span class="hint">新しいパスワード（空欄の場合は変更しません）</span>
+            <input
+              type="password"
+              id="editPassword"
+              placeholder="新しいパスワード"
+            />
+          </div>
+          <div class="form-group">
+            <label for="editEmail">メールアドレス</label>
+            <input
+              type="email"
+              id="editEmail"
+              placeholder="email@example.com"
+            />
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button type="submit">更新</button>
+            <button type="button" onclick="closeEditModal()" class="btn-danger">キャンセル</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <script>
       // ログイン状態確認
       async function checkAuth() {
@@ -269,6 +391,14 @@
         }
       }
 
+      // HTMLエスケープ関数
+      function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
       // 運用者一覧表示
       function renderOperators(operators) {
         const listEl = document.getElementById("operatorsList");
@@ -279,19 +409,32 @@
 
         let html = "<table><thead><tr><th>ユーザー名</th><th>ルームID</th><th>メール</th><th>作成日</th><th>操作</th></tr></thead><tbody>";
         operators.forEach((op) => {
-          html += `<tr>
-            <td>${op.username}</td>
-            <td><code>${op.roomId}</code></td>
-            <td>${op.email || "-"}</td>
+          const escapedUsername = escapeHtml(op.username);
+          const escapedEmail = escapeHtml(op.email || '');
+          const escapedId = escapeHtml(op._id);
+          const escapedRoomId = escapeHtml(op.roomId);
+          
+          html += `<tr id="operator-row-${escapedId}">
+            <td>${escapedUsername}</td>
+            <td><code>${escapedRoomId}</code></td>
+            <td>${escapedEmail || "-"}</td>
             <td>${new Date(op.createdAt).toLocaleDateString("ja-JP")}</td>
             <td>
-              <button class="btn-primary" onclick="window.open('/super-admin-display.html?roomId=${op.roomId}', '_blank')" style="margin-right: 8px;">表示画面を開く</button>
-              <button class="btn-danger" onclick="deleteOperator('${op._id}')">削除</button>
+              <button class="btn-primary" data-operator-id="${escapedId}" data-operator-username="${escapedUsername}" data-operator-email="${escapedEmail}" onclick="editOperatorFromButton(this)" style="margin-right: 8px;">編集</button>
+              <button class="btn-danger" onclick="deleteOperator('${escapedId}')">削除</button>
             </td>
           </tr>`;
         });
         html += "</tbody></table>";
         listEl.innerHTML = html;
+      }
+
+      // 編集ボタンから運用者情報を取得して編集モーダルを開く
+      function editOperatorFromButton(button) {
+        const id = button.getAttribute('data-operator-id');
+        const username = button.getAttribute('data-operator-username');
+        const email = button.getAttribute('data-operator-email');
+        editOperator(id, username, email);
       }
 
       // 運用者作成
@@ -329,6 +472,70 @@
             alert("通信エラーが発生しました");
           }
         });
+
+      // 運用者編集
+      function editOperator(id, username, email) {
+        document.getElementById("editOperatorId").value = id;
+        document.getElementById("editUsername").value = username;
+        document.getElementById("editEmail").value = email;
+        document.getElementById("editPassword").value = "";
+        document.getElementById("editModal").style.display = "block";
+      }
+
+      // 編集モーダルを閉じる
+      function closeEditModal() {
+        document.getElementById("editModal").style.display = "none";
+        document.getElementById("editOperatorForm").reset();
+      }
+
+      // モーダル外をクリックで閉じる
+      window.onclick = function(event) {
+        const modal = document.getElementById("editModal");
+        if (event.target == modal) {
+          closeEditModal();
+        }
+      }
+
+      // 運用者更新
+      document.getElementById("editOperatorForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const id = document.getElementById("editOperatorId").value;
+        const username = document.getElementById("editUsername").value;
+        const password = document.getElementById("editPassword").value;
+        const email = document.getElementById("editEmail").value;
+
+        try {
+          const updateData = { username, email };
+          if (password.trim() !== "") {
+            updateData.password = password;
+          }
+
+          const response = await fetch(`/api/super-admin/operators/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(updateData),
+          });
+
+          if (response.status === 401) {
+            window.location.href = "/super-admin-login.html";
+            return;
+          }
+
+          const data = await response.json();
+          if (response.ok) {
+            alert("運用者を更新しました");
+            closeEditModal();
+            loadOperators();
+            loadStats();
+          } else {
+            alert(data.message || "エラーが発生しました");
+          }
+        } catch (error) {
+          console.error("運用者更新エラー:", error);
+          alert("通信エラーが発生しました");
+        }
+      });
 
       // 運用者削除
       async function deleteOperator(id) {

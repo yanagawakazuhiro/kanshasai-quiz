@@ -634,12 +634,17 @@ app.delete("/api/super-admin/operators/:id", requireSuperAdmin, async (req, res)
 app.put("/api/super-admin/operators/:id", requireSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { username, email, isActive } = req.body;
+    const { username, email, isActive, password } = req.body;
 
     const updateData = {};
     if (username) updateData.username = username;
     if (email !== undefined) updateData.email = email;
     if (isActive !== undefined) updateData.isActive = isActive;
+    // パスワードが提供されている場合のみ更新
+    if (password && password.trim() !== "") {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      updateData.password = hashedPassword;
+    }
 
     const operator = await Operator.findByIdAndUpdate(id, updateData, { new: true }).select(
       "-password"
@@ -682,7 +687,11 @@ app.get("/api/super-admin/stats", requireSuperAdmin, async (req, res) => {
     const stats = await Promise.all(
       operators.map(async (operator) => {
         const questionCount = await Question.countDocuments({ roomId: operator.roomId });
-        const userCount = await User.countDocuments({ roomId: operator.roomId });
+        // ニックネームを入力したユーザー（匿名参加者以外）をカウント
+        const userCount = await User.countDocuments({ 
+          roomId: operator.roomId,
+          nickname: { $ne: "匿名参加者" }
+        });
         const answerCount = await Answer.countDocuments({ roomId: operator.roomId });
         return {
           roomId: operator.roomId,
