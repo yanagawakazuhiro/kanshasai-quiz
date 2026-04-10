@@ -291,12 +291,12 @@ class RoomState {
     this.currentQuestionData = null;
     this.currentQuestionStartTime = null; // 現在の問題の開始時刻
     this.currentQuestionResults = {
-      questionId: null,
-      totalVotes: 0,
-      optionVotes: {},
-      correctOptionId: null,
-      answeredUserIds: new Set(),
-    };
+  questionId: null,
+  totalVotes: 0,
+  optionVotes: {},
+  correctOptionId: null,
+  answeredUserIds: new Set(),
+};
     this.isShowingResults = false;
     this.socketAnsweredFlags = new Map(); // Map<socket.id, boolean>
   }
@@ -307,17 +307,17 @@ class RoomState {
     if (this.quizTimer) {
       clearInterval(this.quizTimer);
       this.quizTimer = null;
-    }
+  }
     this.currentRemainingTime = this.QUESTION_DURATION;
     this.currentQuestionData = null;
     this.currentQuestionStartTime = null;
     this.currentQuestionResults = {
-      questionId: null,
-      totalVotes: 0,
-      optionVotes: {},
-      correctOptionId: null,
-      answeredUserIds: new Set(),
-    };
+    questionId: null,
+    totalVotes: 0,
+    optionVotes: {},
+    correctOptionId: null,
+    answeredUserIds: new Set(),
+  };
     this.isShowingResults = false;
     this.socketAnsweredFlags.clear();
     console.log(`[${this.roomId}] ゲームの状態がリセットされました。`);
@@ -335,7 +335,7 @@ function getRoomState(roomId) {
   if (!roomStates.has(roomId)) {
     roomStates.set(roomId, new RoomState(roomId));
     console.log(`[${roomId}] 新しいルーム状態を作成しました。`);
-  }
+}
   return roomStates.get(roomId);
 }
 
@@ -904,9 +904,9 @@ async function updateScoresForCurrentQuestion(roomId) {
           { new: true }
         );
         if (updatedUser) {
-          console.log(
+        console.log(
             `[${roomId}] [updateScores] ユーザー ${userId} のスコアを更新しました。新しいスコア: ${updatedUser.score}`
-          );
+        );
         }
       } else {
         console.log(
@@ -1016,7 +1016,7 @@ function sendQuizStatusToSocket(s) {
 function broadcastQuizStatus(roomId) {
   if (!roomId) {
     // roomIdが指定されていない場合は、すべてのルームに送信（後方互換性）
-    io.sockets.sockets.forEach((s) => sendQuizStatusToSocket(s));
+  io.sockets.sockets.forEach((s) => sendQuizStatusToSocket(s));
   } else {
     // 指定されたルームのクライアントにのみ送信
     // Socket.IOのルーム機能を使用して、ルーム内のソケットを取得
@@ -1036,7 +1036,7 @@ function broadcastQuizStatus(roomId) {
 io.on("connection", async (socket) => {
   socket.isAdmin = false;
   socket.isController = false;
-  
+
   // ルームIDを取得（クエリパラメータまたはauthから）
   const roomId = socket.handshake.query?.roomId || 
                  socket.handshake.auth?.roomId || 
@@ -1229,26 +1229,26 @@ io.on("connection", async (socket) => {
               const s = io.sockets.sockets.get(socketId);
               if (s && s.roomId === roomId) {
                 try {
-                  if (!s.isAdmin && !s.isController) {
-                    s.emit("question", {
+            if (!s.isAdmin && !s.isController) {
+              s.emit("question", {
                       id: roomState.currentQuestionData._id.toString(),
                       text: roomState.currentQuestionData.text,
                       options: roomState.currentQuestionData.options,
-                      newScore: 0,
-                    });
-                    console.log(
+                newScore: 0,
+              });
+              console.log(
                       `[${roomId}] [startQuiz] 参加者 ${s.id} に最初の問題とスコア0を送信。`
-                    );
-                  } else {
-                    s.emit("question", {
+              );
+            } else {
+              s.emit("question", {
                       id: roomState.currentQuestionData._id.toString(),
                       text: roomState.currentQuestionData.text,
                       options: roomState.currentQuestionData.options,
-                    });
-                    console.log(
+              });
+              console.log(
                       `[${roomId}] [startQuiz] 管理/コントローラー画面 ${s.id} に最初の問題を送信。`
-                    );
-                  }
+              );
+            }
                 } catch (emitError) {
                   console.error(`[${roomId}] [startQuiz] 送信エラー (ソケット ${s.id}):`, emitError);
                 }
@@ -1285,7 +1285,7 @@ io.on("connection", async (socket) => {
                 const s = io.sockets.sockets.get(socketId);
                 if (s && s.roomId === roomId) {
                   roomState.socketAnsweredFlags.set(s.id, false);
-                }
+            }
               });
             }
 
@@ -1295,39 +1295,39 @@ io.on("connection", async (socket) => {
               roomForQuestion.forEach(async (socketId) => {
                 const s = io.sockets.sockets.get(socketId);
                 if (s && s.roomId === roomId) {
-                  try {
-                    if (!s.isAdmin && !s.isController) {
+              try {
+                if (!s.isAdmin && !s.isController) {
                       const participantUser = await User.findOne({ _id: s.userId, roomId: roomId });
-                      s.emit("question", {
+                  s.emit("question", {
                         id: roomState.currentQuestionData._id,
                         text: roomState.currentQuestionData.text,
                         options: roomState.currentQuestionData.options,
-                        newScore: participantUser ? participantUser.score : 0,
-                      });
-                      console.log(
+                    newScore: participantUser ? participantUser.score : 0,
+                  });
+                  console.log(
                         `[${roomId}] [nextQuestion] 参加者 ${s.id} (${
-                          s.userId
-                        }) に問題とスコアを送信。スコア: ${
-                          participantUser ? participantUser.score : 0
-                        }`
-                      );
-                    } else {
-                      s.emit("question", {
+                      s.userId
+                    }) に問題とスコアを送信。スコア: ${
+                      participantUser ? participantUser.score : 0
+                    }`
+                  );
+                } else {
+                  s.emit("question", {
                         id: roomState.currentQuestionData._id.toString(),
                         text: roomState.currentQuestionData.text,
                         options: roomState.currentQuestionData.options,
-                      });
-                      console.log(
+                  });
+                  console.log(
                         `[${roomId}] [nextQuestion] 管理/コントローラー画面 ${s.id} に問題を送信。`
-                      );
-                    }
-                  } catch (emitError) {
-                    console.error(
-                      `[${roomId}] [nextQuestion] 問題またはスコア送信中にエラー (ソケット ${s.id}):`,
-                      emitError
-                    );
-                  }
+                  );
                 }
+              } catch (emitError) {
+                console.error(
+                      `[${roomId}] [nextQuestion] 問題またはスコア送信中にエラー (ソケット ${s.id}):`,
+                  emitError
+                );
+              }
+            }
               });
             }
             console.log(`[${roomId}] 次の問題を送信しました。`);
@@ -1343,28 +1343,28 @@ io.on("connection", async (socket) => {
               roomForEnd.forEach(async (socketId) => {
                 const s = io.sockets.sockets.get(socketId);
                 if (s && s.roomId === roomId) {
-                  try {
-                    if (!s.isAdmin && !s.isController) {
+              try {
+                if (!s.isAdmin && !s.isController) {
                       const participantUser = await User.findOne({ _id: s.userId, roomId: roomId });
-                      s.emit("quizEnded", {
-                        message: "全問終了しました！",
-                        finalScore: participantUser ? participantUser.score : 0,
-                      });
-                    } else if (s.isController) {
-                      s.emit("quizEnded", {
-                        message: "全問終了しました。",
-                        finalRanking: finalRankingData,
-                      });
-                    } else {
-                      s.emit("quizEnded", { message: "クイズが終了しました。" });
-                    }
-                  } catch (emitError) {
-                    console.error(
-                      `[${roomId}] [nextQuestion-quizEnded] 終了メッセージ送信中にエラー (ソケット ${s.id}):`,
-                      emitError
-                    );
-                  }
+                  s.emit("quizEnded", {
+                    message: "全問終了しました！",
+                    finalScore: participantUser ? participantUser.score : 0,
+                  });
+                } else if (s.isController) {
+                  s.emit("quizEnded", {
+                    message: "全問終了しました。",
+                    finalRanking: finalRankingData,
+                  });
+                } else {
+                  s.emit("quizEnded", { message: "クイズが終了しました。" });
                 }
+              } catch (emitError) {
+                console.error(
+                      `[${roomId}] [nextQuestion-quizEnded] 終了メッセージ送信中にエラー (ソケット ${s.id}):`,
+                  emitError
+                );
+              }
+            }
               });
             }
 
@@ -1408,33 +1408,33 @@ io.on("connection", async (socket) => {
             const promises = Array.from(roomForEndQuiz).map(async (socketId) => {
               const s = io.sockets.sockets.get(socketId);
               if (s && s.roomId === roomId) {
-                try {
-                  if (!s.isAdmin && !s.isController) {
+            try {
+              if (!s.isAdmin && !s.isController) {
                     const participantUser = await User.findOne({ _id: s.userId, roomId: roomId });
-                    s.emit("quizEnded", {
-                      message: "クイズが終了しました！",
-                      finalScore: participantUser ? participantUser.score : 0,
-                      finalRanking: finalRankingData,
-                    });
-                    console.log(
+                s.emit("quizEnded", {
+                  message: "クイズが終了しました！",
+                  finalScore: participantUser ? participantUser.score : 0,
+                  finalRanking: finalRankingData,
+                });
+                console.log(
                       `[${roomId}] [endQuiz] 参加者 ${s.id} に最終スコア (${
-                        participantUser ? participantUser.score : 0
-                      }) を送信しました。`
-                    );
-                  } else if (s.isController) {
-                    s.emit("quizEnded", {
-                      message: "クイズが終了しました。",
-                      finalRanking: finalRankingData,
-                    });
-                  } else {
-                    s.emit("quizEnded", { message: "クイズが終了しました。" });
-                  }
-                } catch (emitError) {
-                  console.error(
+                    participantUser ? participantUser.score : 0
+                  }) を送信しました。`
+                );
+              } else if (s.isController) {
+                s.emit("quizEnded", {
+                  message: "クイズが終了しました。",
+                  finalRanking: finalRankingData,
+                });
+              } else {
+                s.emit("quizEnded", { message: "クイズが終了しました。" });
+              }
+            } catch (emitError) {
+              console.error(
                     `[${roomId}] [endQuiz] 終了メッセージ送信中にエラー (ソケット ${s.id}):`,
-                    emitError
-                  );
-                }
+                emitError
+              );
+            }
               }
             });
             await Promise.all(promises);
@@ -1451,7 +1451,7 @@ io.on("connection", async (socket) => {
             !roomState.currentQuestionData
           ) {
             if (!hasVideo) {
-              socket.emit("message", "まだ結果を表示できません。");
+            socket.emit("message", "まだ結果を表示できません。");
             }
             return;
           }
